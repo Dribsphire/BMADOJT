@@ -35,9 +35,12 @@ class Database
         
         $host = $_ENV['DB_HOST'] ?? 'localhost';
         $port = $_ENV['DB_PORT'] ?? 3306;
-        $database = $_ENV['DB_DATABASE'] ?? 'ojtroute_db';
-        $username = $_ENV['DB_USERNAME'] ?? 'root';
-        $password = $_ENV['DB_PASSWORD'] ?? '';
+        //$database = $_ENV['DB_DATABASE'] ?? 'ojtroute_db';
+        //$username = $_ENV['DB_USERNAME'] ?? 'root';
+        //$password = $_ENV['DB_PASSWORD'] ?? '';
+        $database = $_ENV['DB_DATABASE'] ?? 'u719275046_ojt_route';
+        $username = $_ENV['DB_USERNAME'] ?? 'u719275046_ojt_route';
+        $password = $_ENV['DB_PASSWORD'] ?? 'rmpL!3LfXgf@Uew';
         
         $dsn = "mysql:host=$host;port=$port;dbname=$database;charset=utf8mb4";
         
