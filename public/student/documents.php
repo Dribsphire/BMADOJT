@@ -125,6 +125,33 @@ $progressPercentage = $totalRequired > 0 ? ($approvedCount / $totalRequired) * 1
             background-color: #f8f9fa;
         }
         
+        /* Fixed position alert styles */
+        .alert-fixed {
+            position: fixed !important;
+            top: 20px !important;
+            right: 20px !important;
+            z-index: 9999 !important;
+            min-width: 300px !important;
+            max-width: 500px !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+            border-radius: 8px !important;
+        }
+
+        /* Auto-dismiss animation */
+        .alert-auto-dismiss {
+            animation: slideInRight 0.3s ease-out, fadeOut 0.3s ease-in 4.7s forwards;
+        }
+
+        @keyframes slideInRight {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+        
         .document-card {
             transition: transform 0.2s ease-in-out;
         }
@@ -169,6 +196,19 @@ $progressPercentage = $totalRequired > 0 ? ($approvedCount / $totalRequired) * 1
             <?= htmlspecialchars($error) ?>
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
+        <?php endif; ?>
+        
+        <!-- Session Error Alert -->
+        <?php if (isset($_SESSION['error'])): ?>
+            <div class="alert alert-danger alert-fixed alert-auto-dismiss" role="alert">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <span><?= htmlspecialchars($_SESSION['error']) ?></span>
+                    <button type="button" class="btn-close ms-auto" onclick="dismissAlert(this.parentElement.parentElement)"></button>
+                </div>
+            </div>
+            <script>setTimeout(() => { const alert = document.querySelector('.alert-fixed'); if(alert) alert.remove(); }, 5000);</script>
+            <?php unset($_SESSION['error']); ?>
         <?php endif; ?>
         
         <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
@@ -588,6 +628,12 @@ $progressPercentage = $totalRequired > 0 ? ($approvedCount / $totalRequired) * 1
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
     <script>
+    // Alert dismiss function
+    function dismissAlert(alertElement) {
+        alertElement.style.animation = 'fadeOut 0.3s ease-in forwards';
+        setTimeout(() => alertElement.remove(), 300);
+    }
+    
     // Save and restore scroll position
     (function() {
         const SCROLL_POSITION_KEY = 'documents_scroll_position';

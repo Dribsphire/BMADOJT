@@ -338,7 +338,6 @@ if (isset($_GET['action'])) {
     <?php include 'student-sidebar.php'; ?>
 
     <main>
-    <?php include 'nav-bar.php'; ?>
         <div class="container-fluid py-4">
             <!-- Header -->
             <div class="row mb-4">

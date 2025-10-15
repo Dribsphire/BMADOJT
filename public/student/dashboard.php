@@ -195,6 +195,33 @@ if ($profile) {
             background-color: #f8f9fa;
         }
         
+        /* Fixed position alert styles */
+        .alert-fixed {
+            position: fixed !important;
+            top: 20px !important;
+            right: 20px !important;
+            z-index: 9999 !important;
+            min-width: 300px !important;
+            max-width: 500px !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+            border-radius: 8px !important;
+        }
+
+        /* Auto-dismiss animation */
+        .alert-auto-dismiss {
+            animation: slideInRight 0.3s ease-out, fadeOut 0.3s ease-in 4.7s forwards;
+        }
+
+        @keyframes slideInRight {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+        
         .navbar {
             background: var(--chmsu-green) !important;
         }
@@ -275,7 +302,6 @@ if ($profile) {
 <body>
 <?php include 'student-sidebar.php'; ?>
 <main>
-   <?php include 'nav-bar.php'; ?>
     
     <!-- Main Content -->
     <div class="container-fluid py-4">
@@ -303,7 +329,7 @@ if ($profile) {
         <?php if ($missingTimeoutCount > 0): ?>
         <div class="row mb-4">
             <div class="col-12">
-                <div class="alert alert-warning alert-dismissible fade show" role="alert">
+                <div class="alert alert-warning alert-fixed alert-auto-dismiss" role="alert">
                     <div class="d-flex align-items-center">
                         <i class="bi bi-exclamation-triangle-fill fs-4 me-3"></i>
                         <div class="flex-grow-1">
@@ -334,9 +360,10 @@ if ($profile) {
                                 <i class="bi bi-clock-history me-1"></i>Submit Request
                             </a>
                         </div>
+                        <button type="button" class="btn-close ms-auto" onclick="dismissAlert(this.parentElement.parentElement)" aria-label="Close"></button>
                     </div>
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                 </div>
+                <script>setTimeout(() => { const alert = document.querySelector('.alert-fixed'); if(alert) alert.remove(); }, 5000);</script>
             </div>
         </div>
         <?php endif; ?>
@@ -510,33 +537,15 @@ if ($profile) {
         </div>
     </div>
     
-    <!-- Logout Confirmation Modal -->
-    <div class="modal fade" id="logoutModal" tabindex="-1" aria-labelledby="logoutModalLabel" aria-hidden="true">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="logoutModalLabel">
-                        <i class="bi bi-box-arrow-right me-2"></i>Confirm Logout
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <p>Are you sure you want to logout from OJT Route?</p>
-                    <p class="text-muted small">You will need to login again to access the system.</p>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                        <i class="bi bi-x-circle me-1"></i>Cancel
-                    </button>
-                    <a href="../logout.php" class="btn btn-danger">
-                        <i class="bi bi-box-arrow-right me-1"></i>Yes, Logout
-                    </a>
-                </div>
-            </div>
-        </div>
-    </div>
     
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Alert dismiss function
+        function dismissAlert(alertElement) {
+            alertElement.style.animation = 'fadeOut 0.3s ease-in forwards';
+            setTimeout(() => alertElement.remove(), 300);
+        }
+    </script>
                                     
 </main>
 </body>

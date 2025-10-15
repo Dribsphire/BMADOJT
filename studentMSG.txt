@@ -1,0 +1,438 @@
+<?php
+session_start();
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'student') {
+    header("Location: ../index.php");
+    exit();
+}
+require_once '../dbconnect.php';
+
+// Debug session information
+error_log("Session user_id: " . $_SESSION['user_id']);
+error_log("Session role: " . $_SESSION['role']);
+
+// First, check the users table directly
+try {
+    // Debug: Check all users
+    $stmt = $conn->query("SELECT * FROM users");
+    $all_users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    error_log("All users in database: " . print_r($all_users, true));
+
+    // Check specific user - using user_id instead of id
+    $stmt = $conn->prepare("SELECT * FROM users WHERE user_id = ?");
+    $stmt->execute([$_SESSION['user_id']]);
+    $user_info = $stmt->fetch(PDO::FETCH_ASSOC);
+    error_log("Specific user info: " . print_r($user_info, true));
+
+    if (!$user_info) {
+        die("Error: User account not found in database. Please contact the administrator.");
+    }
+
+    // Get student's information using user_id from users table
+    $stmt = $conn->prepare("
+        SELECT s.*, u.id as user_id
+        FROM students s
+        JOIN users u ON s.user_id = u.user_id
+        WHERE u.user_id = ?
+    ");
+    $stmt->execute([$_SESSION['user_id']]);
+    $student_info = $stmt->fetch(PDO::FETCH_ASSOC);
+    error_log("Student info: " . print_r($student_info, true));
+
+    if (!$student_info) {
+        die("Error: Student profile not found. Please contact the administrator to set up your student profile.");
+    }
+
+    $student_section = $student_info['section'];
+    error_log("Student section: " . $student_section);
+
+    // Get teachers assigned to student's section with unread message counts
+    $stmt = $conn->prepare("
+        SELECT DISTINCT t.*, u.id as user_id,
+               COALESCE(unread_counts.unread_count, 0) as unread_count
+        FROM teachers t
+        JOIN users u ON t.user_id = u.user_id
+        JOIN teacher_sections ts ON t.teacher_id = ts.teacher_id
+        LEFT JOIN (
+            SELECT sender_id, COUNT(*) as unread_count
+            FROM messages
+            WHERE receiver_id = ? AND is_read = 0
+            GROUP BY sender_id
+        ) unread_counts ON unread_counts.sender_id = u.user_id
+        WHERE ts.section = ?
+    ");
+    $stmt->execute([$_SESSION['user_id'], $student_section]);
+    $teachers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    error_log("Teachers found: " . print_r($teachers, true));
+
+    // Get messages for the selected teacher (if any)
+    $selected_teacher_id = isset($_GET['teacher_id']) ? $_GET['teacher_id'] : null;
+    $messages = [];
+    if ($selected_teacher_id) {
+        error_log("Fetching messages for student_id: " . $_SESSION['user_id'] . " and teacher_id: " . $selected_teacher_id);
+        
+        // First, get the teacher's user_id from their id
+        $stmt = $conn->prepare("SELECT user_id FROM users WHERE id = ?");
+        $stmt->execute([$selected_teacher_id]);
+        $teacher_user_id = $stmt->fetchColumn();
+        error_log("Teacher's user_id: " . $teacher_user_id);
+
+        // Now get the messages using user_ids
+        $stmt = $conn->prepare("
+            SELECT m.*, 
+                   CASE 
+                       WHEN m.sender_id = ? THEN 'sent'
+                       ELSE 'received'
+                   END as message_type
+            FROM messages m
+            WHERE (m.sender_id = ? AND m.receiver_id = ?)
+               OR (m.sender_id = ? AND m.receiver_id = ?)
+            ORDER BY m.created_at ASC
+        ");
+        $stmt->execute([
+            $_SESSION['user_id'],
+            $_SESSION['user_id'],
+            $teacher_user_id,
+            $teacher_user_id,
+            $_SESSION['user_id']
+        ]);
+        $messages = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        error_log("Messages found: " . print_r($messages, true));
+        
+        // Mark messages from this teacher as read
+        $stmt = $conn->prepare("
+            UPDATE messages 
+            SET is_read = 1 
+            WHERE sender_id = ? AND receiver_id = ? AND is_read = 0
+        ");
+        $stmt->execute([$teacher_user_id, $_SESSION['user_id']]);
+        error_log("Marked messages as read for teacher_user_id: " . $teacher_user_id);
+    }
+} catch (PDOException $e) {
+    error_log("Database error: " . $e->getMessage());
+    die("Error: Database connection issue. Please try again later.");
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OJTROUTE:: Messages</title>
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="stylesheet" href="../css/sidebarstyle.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script type="text/javascript" src="../js/sidebarSlide.js" defer></script>
+    <style>
+        .message-container {
+            display: flex;
+            height: calc(100vh - 155px);
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        .teacher-list {
+            width: 300px;
+            border-right: 1px solid #eee;
+            overflow-y: auto;
+            padding: 15px;
+        }
+        .teacher-list h3 {
+            margin: 0 0 15px 0;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .teacher-item {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            position: relative;
+        }
+        .teacher-item:hover {
+            background-color: #f5f5f5;
+        }
+        .teacher-item.active {
+            background-color: #e3f2fd;
+            border-left: 4px solid #2196F3;
+        }
+        .notification-badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: #ff4444;
+            color: white;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+            min-width: 20px;
+        }
+        .notification-badge.hidden {
+            display: none;
+        }
+        .chat-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        .chat-header {
+            padding: 15px 20px;
+            border-bottom: 1px solid #eee;
+            background: #f8f9fa;
+        }
+        .chat-header h3 {
+            margin: 0;
+        }
+        .messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .message {
+            display: flex;
+            flex-direction: column;
+            max-width: 70%;
+            margin-bottom: 10px;
+        }
+        .message.sent {
+            align-self: flex-end;
+        }
+        .message.received {
+            align-self: flex-start;
+        }
+        .message-content {
+            padding: 12px 16px;
+            border-radius: 15px;
+            position: relative;
+            word-wrap: break-word;
+        }
+        .sent .message-content {
+            background: #4CAF50;
+            color: white;
+            border-bottom-right-radius: 5px;
+        }
+        .received .message-content {
+            background: #f1f1f1;
+            border-bottom-left-radius: 5px;
+        }
+        .message-time {
+            font-size: 0.75em;
+            color: #666;
+            margin-top: 4px;
+            padding: 0 4px;
+        }
+        .sent .message-time {
+            text-align: right;
+        }
+        .message-input {
+            padding: 15px 20px;
+            border-top: 1px solid #eee;
+            display: flex;
+            gap: 10px;
+            background: #fff;
+        }
+        .message-input input {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 20px;
+            outline: none;
+            font-size: 14px;
+        }
+        .message-input input:focus {
+            border-color: #4CAF50;
+        }
+        .message-input button {
+            padding: 12px 24px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background 0.3s;
+        }
+        .message-input button:hover {
+            background: #45a049;
+        }
+        .no-chat-selected {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #666;
+            font-size: 1.2em;
+            background: #f8f9fa;
+        }
+        .select-teacher-prompt {
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .select-teacher-prompt i {
+            margin-bottom: 15px;
+        }
+        .select-teacher-prompt p {
+            margin: 0;
+            font-size: 1.1em;
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+<?php include 'student-sidebar.php';?>
+    <main>
+    <h2 style="background-color: green; color: white; padding: 30px; border-radius: 5px;"> Messages</h2> <br>
+        <div class="message-container">
+            <div class="teacher-list">
+                <h3>Teachers</h3>
+                <?php if (empty($teachers)): ?>
+                    <p>No teachers assigned to your section.</p>
+                <?php else: ?>
+                    <?php foreach ($teachers as $teacher): ?>
+                        <div class="teacher-item <?php echo $selected_teacher_id == $teacher['user_id'] ? 'active' : ''; ?>"
+                             onclick="window.location.href='?teacher_id=<?php echo $teacher['user_id']; ?>'">
+                            <h4><?php echo htmlspecialchars($teacher['first_name'] . ' ' . $teacher['last_name']); ?></h4>
+                            <p><?php echo htmlspecialchars($teacher['department']); ?></p>
+                            <?php if ($teacher['unread_count'] > 0): ?>
+                                <div class="notification-badge" id="badge-<?php echo $teacher['user_id']; ?>">
+                                    <?php echo $teacher['unread_count']; ?>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+            <div class="chat-area">
+                <?php if ($selected_teacher_id): ?>
+                    <div class="chat-header">
+                        <h3>Chat with <?php 
+                            $teacher = array_filter($teachers, function($t) use ($selected_teacher_id) {
+                                return $t['user_id'] == $selected_teacher_id;
+                            });
+                            $teacher = reset($teacher);
+                            echo htmlspecialchars($teacher['first_name'] . ' ' . $teacher['last_name']);
+                        ?></h3>
+                    </div>
+                    <div class="messages" id="messages">
+                        <?php foreach ($messages as $message): ?>
+                            <div class="message <?php echo $message['message_type']; ?>">
+                                <div class="message-content">
+                                    <?php echo htmlspecialchars($message['message']); ?>
+                                </div>
+                                <div class="message-time">
+                                    <?php 
+                                        $date = new DateTime($message['created_at']);
+                                        echo $date->format('M d, Y h:i A');
+                                    ?>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                    <div class="message-input">
+                        <input type="text" id="message-input" placeholder="Type your message...">
+                        <button type="button" id="send-button">Send</button>
+                    </div>
+                <?php else: ?>
+                    <div class="no-chat-selected">
+                        <div class="select-teacher-prompt">
+                            <i class="fas fa-user-plus" style="font-size: 48px; color: #ccc; margin-bottom: 15px;"></i>
+                            <p>Select a teacher to start chatting</p>
+                        </div>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        function sendMessage() {
+            const input = document.getElementById('message-input');
+            const message = input.value.trim();
+            const receiverId = '<?php echo $selected_teacher_id ?: ''; ?>';
+            
+            console.log('Attempting to send message:', {
+                message: message,
+                receiverId: receiverId,
+                senderId: '<?php echo $_SESSION['user_id']; ?>'
+            });
+            
+            if (!receiverId) {
+                alert('Please select a teacher first');
+                return;
+            }
+            
+            if (message) {
+                fetch('send_message.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        receiver_id: receiverId,
+                        message: message
+                    })
+                })
+                .then(response => {
+                    console.log('Response status:', response.status);
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('Response data:', data);
+                    if (data.success) {
+                        input.value = '';
+                        location.reload();
+                    } else {
+                        alert('Error sending message: ' + (data.error || 'Unknown error'));
+                        console.error('Error details:', data);
+                    }
+                })
+                .catch(error => {
+                    alert('Error sending message: ' + error.message);
+                    console.error('Error:', error);
+                });
+            }
+        }
+
+        // Add click event listener to send button
+        document.getElementById('send-button')?.addEventListener('click', function(e) {
+            e.preventDefault();
+            console.log('Send button clicked');
+            sendMessage();
+        });
+
+        // Auto-scroll to bottom of messages
+        const messagesDiv = document.getElementById('messages');
+        if (messagesDiv) {
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        // Hide notification badge for selected teacher
+        const selectedTeacherId = '<?php echo $selected_teacher_id ?: ''; ?>';
+        if (selectedTeacherId) {
+            const badge = document.getElementById('badge-' + selectedTeacherId);
+            if (badge) {
+                badge.style.display = 'none';
+            }
+        }
+
+        // Handle Enter key
+        document.getElementById('message-input')?.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                console.log('Enter key pressed');
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>

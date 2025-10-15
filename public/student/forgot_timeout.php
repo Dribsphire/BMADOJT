@@ -59,8 +59,8 @@ $existingRequests = $forgotTimeoutService->getStudentRequests($user->id);
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
     <style>
         :root {
-            --chmsu-green: #2d5016;
-            --chmsu-light-green: #4a7c59;
+            --chmsu-green: #0ea539;
+            --chmsu-light-green: #34d399;
         }
         body {
             font-family: 'Poppins', sans-serif;

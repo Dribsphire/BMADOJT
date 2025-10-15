@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>JavaScript Test</title>
+</head>
+<body>
+    <h1>JavaScript Test</h1>
+    <button onclick="testFunction()">Test Button</button>
+    <button onclick="alert('Test: ' + typeof window.testFunction)">Type Test</button>
+    
+    <script>
+        console.log('JavaScript is executing...');
+        alert('JavaScript is working!');
+        
+        window.testFunction = function() {
+            alert('testFunction called!');
+        };
+        
+        console.log('testFunction defined:', typeof window.testFunction);
+    </script>
+</body>
+</html>

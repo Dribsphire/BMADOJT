@@ -274,6 +274,33 @@ $profile = $stmt->fetch();
             background-color: #f8f9fa;
         }
         
+        /* Fixed position alert styles */
+        .alert-fixed {
+            position: fixed !important;
+            top: 20px !important;
+            right: 20px !important;
+            z-index: 9999 !important;
+            min-width: 300px !important;
+            max-width: 500px !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+            border-radius: 8px !important;
+        }
+
+        /* Auto-dismiss animation */
+        .alert-auto-dismiss {
+            animation: slideInRight 0.3s ease-out, fadeOut 0.3s ease-in 4.7s forwards;
+        }
+
+        @keyframes slideInRight {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+        
         .navbar {
             background: var(--chmsu-green) !important;
         }
@@ -313,87 +340,84 @@ $profile = $stmt->fetch();
             border-left-color: #28a745;
             background-color: #d4edda;
         }
+                /* Fixed position alert styles */
+        .alert-fixed {
+            position: fixed !important;
+            top: 20px !important;
+            right: 20px !important;
+            z-index: 9999 !important;
+            min-width: 300px !important;
+            max-width: 500px !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+            border-radius: 8px !important;
+        }
+
+        /* Auto-dismiss animation */
+        .alert-auto-dismiss {
+            animation: slideInRight 0.3s ease-out, fadeOut 0.3s ease-in 4.7s forwards;
+        }
+
+        @keyframes slideInRight {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
     </style>
 </head>
 <body>
     <?php include 'student-sidebar.php'; ?>
     <main>
-        <!-- Navigation -->
-        <nav class="navbar navbar-expand-lg navbar-dark">
-            <div class="container-fluid">
-                <a class="navbar-brand" href="dashboard.php">
-                    <i class="bi bi-mortarboard me-2"></i>OJT Route
-                </a>
-                <div class="navbar-nav ms-auto">
-                    <a class="nav-link" href="dashboard.php">
-                        <i class="bi bi-speedometer2 me-1"></i>Dashboard
-                    </a>
-                    <a class="nav-link" href="attendance.php">
-                        <i class="bi bi-clock me-1"></i>Attendance
-                    </a>
-                    <a class="nav-link" href="documents.php">
-                        <i class="bi bi-file-text me-1"></i>Documents
-                    </a>
-                    <a class="nav-link active" href="profile.php">
-                        <i class="bi bi-person me-1"></i>Profile
-                    </a>
-                    <a class="nav-link" href="messages.php">
-                        <i class="bi bi-chat me-1"></i>Messages
-                    </a>
-                    <span class="navbar-text me-3">
-                        Welcome, <?= htmlspecialchars($user->getDisplayName()) ?>
-                    </span>
-                    <button type="button" class="btn btn-outline-light btn-sm" 
-                            data-bs-toggle="modal" data-bs-target="#logoutModal">
-                        <i class="bi bi-box-arrow-right me-1"></i>Logout
-                    </button>
-                </div>
-            </div>
-        </nav><br>
-        
-                            <!-- Workplace Status -->
-                            <div class="row mb-4">
-                        <div class="col-12">
-                            <div class="card workplace-status <?= $profile && $profile['workplace_location_locked'] ? 'complete' : '' ?>">
-                                <div class="card-body">
-                                    <h5 class="card-title">
-                                        <i class="bi bi-geo-alt me-2"></i>Workplace Information Status
-                                    </h5>
-                                    <?php if ($profile && $profile['workplace_location_locked']): ?>
-                                        <p class="card-text text-success">
-                                            <i class="bi bi-check-circle me-2"></i>Workplace location is set and locked. You can now mark attendance.
-                                        </p>
-                                    <?php else: ?>
-                                        <p class="card-text text-danger">
-                                            <i class="bi bi-exclamation-triangle me-2"></i>Complete your workplace information below to enable attendance features.
-                                        </p>
-                                    <?php endif; ?>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-        <!-- Main Content -->
         <div class="container-fluid py-4">
             <div class="row">
-                <div class="col-12">
-                    <h2 class="mb-4">
-                        <i class="bi bi-person me-2"></i>My Profile
-                    </h2>
+                <div class="col-12">   
                     
+                            <!-- Workplace Status -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card workplace-status <?= $profile && $profile['workplace_location_locked'] ? 'complete' : '' ?>">
+                    <div class="card-body">
+                        <h5 class="card-title">
+                            <i class="bi bi-geo-alt me-2"></i>Workplace Information And Documents Status
+                        </h5>
+                        <?php if ($profile && $profile['workplace_location_locked']): ?>
+                            <p class="card-text text-success">
+                                <i class="bi bi-check-circle me-2"></i>Workplace location is set and locked. You can now mark attendance.
+                            </p>
+                        <?php else: ?>
+                            <p class="card-text text-danger">
+                                <i class="bi bi-exclamation-triangle me-2"></i>Complete your workplace information below and pass all the required documents after to enable attendance features.
+                            </p>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+        </div>
+
                     <!-- Success/Error Messages -->
                     <?php if (isset($_SESSION['success'])): ?>
-                        <div class="alert alert-success alert-dismissible fade show" role="alert">
-                            <i class="bi bi-check-circle me-2"></i><?= htmlspecialchars($_SESSION['success']) ?>
-                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        <div class="alert alert-success alert-fixed alert-auto-dismiss" role="alert">
+                            <div class="d-flex align-items-center">
+                                <i class="bi bi-check-circle me-2"></i>
+                                <span><?= htmlspecialchars($_SESSION['success']) ?></span>
+                                <button type="button" class="btn-close ms-auto" onclick="dismissAlert(this.parentElement.parentElement)"></button>
+                            </div>
                         </div>
-                        <?php unset($_SESSION['success']); ?>
+                        <script>setTimeout(() => document.querySelector('.alert-fixed').remove(), 5000);</script>
                     <?php endif; ?>
                     
                     <?php if (isset($_SESSION['error'])): ?>
-                        <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                            <i class="bi bi-exclamation-triangle me-2"></i><?= htmlspecialchars($_SESSION['error']) ?>
-                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        <div class="alert alert-danger alert-fixed alert-auto-dismiss" role="alert">
+                            <div class="d-flex align-items-center">
+                                <i class="bi bi-exclamation-triangle me-2"></i>
+                                <span><?= htmlspecialchars($_SESSION['error']) ?></span>
+                                <button type="button" class="btn-close ms-auto" onclick="dismissAlert(this.parentElement.parentElement)"></button>
+                            </div>
                         </div>
+                        <script>setTimeout(() => { const alert = document.querySelector('.alert-fixed'); if(alert) alert.remove(); }, 5000);</script>
                         <?php unset($_SESSION['error']); ?>
                     <?php endif; ?>
                     
@@ -405,6 +429,55 @@ $profile = $stmt->fetch();
                                     <h5 class="card-title">
                                         <i class="bi bi-person me-2"></i>Basic Profile Information
                                     </h5>
+
+                                    <div class="card-body">
+                                    <h5 class="card-title">
+                                        <i class="bi bi-camera me-2"></i>Profile Picture
+                                    </h5>
+                                    <div class="row align-items-center">
+                                        <div class="col-md-3 text-center">
+                                            <?php 
+                                            $profilePictureUrl = $fileUploadService->getProfilePictureUrl($user->profile_picture);
+                                            ?>
+                                            <img src="<?= $profilePictureUrl ?>" 
+                                                 alt="Profile Picture" 
+                                                 class="img-thumbnail rounded-circle mb-3" 
+                                                 style="width: 120px; height: 120px; object-fit: cover;">
+                                        </div>
+                                        <div class="col-md-9">
+                                            <form method="POST" enctype="multipart/form-data" class="mb-3">
+                                                <input type="hidden" name="action" value="upload_profile_picture">
+                                                <div class="mb-3">
+                                                    <label for="profile_picture" class="form-label">Upload New Picture</label>
+                                                    <input type="file" 
+                                                           class="form-control" 
+                                                           id="profile_picture" 
+                                                           name="profile_picture" 
+                                                           accept="image/*"
+                                                           required>
+                                                    <div class="form-text">
+                                                        Supported formats: JPEG, PNG, GIF, WebP. Maximum size: 5MB.
+                                                    </div>
+                                                </div>
+                                                <button type="submit" class="btn btn-primary">
+                                                    <i class="bi bi-upload me-2" style="color:white;"></i>Upload Picture
+                                                </button>
+                                            </form>
+                                            
+                                            <?php if ($user->profile_picture): ?>
+                                                <form method="POST" class="d-inline">
+                                                    <input type="hidden" name="action" value="delete_profile_picture">
+                                                    <button type="submit" 
+                                                            class="btn btn-outline-danger btn-sm"
+                                                            onclick="return confirm('Are you sure you want to delete your profile picture?')">
+                                                        <i class="bi bi-trash me-2"></i>Delete Picture
+                                                    </button>
+                                                </form>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                </div>
+
                                     <form method="POST" id="basicProfileForm">
                                         <input type="hidden" name="action" value="update_basic_profile">
                                         <div class="row">
@@ -549,53 +622,7 @@ $profile = $stmt->fetch();
                     <div class="row mb-4">
                         <div class="col-12">
                             <div class="card">
-                                <div class="card-body">
-                                    <h5 class="card-title">
-                                        <i class="bi bi-camera me-2"></i>Profile Picture
-                                    </h5>
-                                    <div class="row align-items-center">
-                                        <div class="col-md-3 text-center">
-                                            <?php 
-                                            $profilePictureUrl = $fileUploadService->getProfilePictureUrl($user->profile_picture);
-                                            ?>
-                                            <img src="<?= $profilePictureUrl ?>" 
-                                                 alt="Profile Picture" 
-                                                 class="img-thumbnail rounded-circle mb-3" 
-                                                 style="width: 120px; height: 120px; object-fit: cover;">
-                                        </div>
-                                        <div class="col-md-9">
-                                            <form method="POST" enctype="multipart/form-data" class="mb-3">
-                                                <input type="hidden" name="action" value="upload_profile_picture">
-                                                <div class="mb-3">
-                                                    <label for="profile_picture" class="form-label">Upload New Picture</label>
-                                                    <input type="file" 
-                                                           class="form-control" 
-                                                           id="profile_picture" 
-                                                           name="profile_picture" 
-                                                           accept="image/*"
-                                                           required>
-                                                    <div class="form-text">
-                                                        Supported formats: JPEG, PNG, GIF, WebP. Maximum size: 5MB.
-                                                    </div>
-                                                </div>
-                                                <button type="submit" class="btn btn-primary">
-                                                    <i class="bi bi-upload me-2"></i>Upload Picture
-                                                </button>
-                                            </form>
-                                            
-                                            <?php if ($user->profile_picture): ?>
-                                                <form method="POST" class="d-inline">
-                                                    <input type="hidden" name="action" value="delete_profile_picture">
-                                                    <button type="submit" 
-                                                            class="btn btn-outline-danger btn-sm"
-                                                            onclick="return confirm('Are you sure you want to delete your profile picture?')">
-                                                        <i class="bi bi-trash me-2"></i>Delete Picture
-                                                    </button>
-                                                </form>
-                                            <?php endif; ?>
-                                        </div>
-                                    </div>
-                                </div>
+                                
                             </div>
                         </div>
                     </div>
@@ -738,10 +765,10 @@ $profile = $stmt->fetch();
                                                 </button>
                                             <?php endif; ?>
                                             <a href="dashboard.php" class="btn btn-outline-secondary">
-                                                <i class="bi bi-arrow-left me-2"></i>Back to Dashboard
+                                                <i class="bi bi-arrow-left me-2" style="color:#0ea539;"></i>Request Edit
                                             </a>
                                         </div>
-                                    </form>
+                                    </form> 
                                 </div>
                             </div>
                         </div>
@@ -813,6 +840,12 @@ $profile = $stmt->fetch();
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
+        // Alert dismiss function
+        function dismissAlert(alertElement) {
+            alertElement.style.animation = 'fadeOut 0.3s ease-in forwards';
+            setTimeout(() => alertElement.remove(), 300);
+        }
+        
         // Initialize map
         let map;
         let marker;
@@ -1043,6 +1076,37 @@ $profile = $stmt->fetch();
                 e.preventDefault();
                 alert('New password and confirmation do not match.');
                 return;
+            }
+            // Auto-dismiss function
+            function showAlert(type, message) {
+                // Remove existing alerts
+                document.querySelectorAll('.alert-fixed').forEach(alert => alert.remove());
+                
+                // Create new alert
+                const alertDiv = document.createElement('div');
+                alertDiv.className = `alert alert-${type} alert-fixed alert-auto-dismiss`;
+                alertDiv.innerHTML = `
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-${type === 'success' ? 'check-circle' : 'exclamation-triangle'} me-2"></i>
+                        <span>${message}</span>
+                        <button type="button" class="btn-close ms-auto" onclick="dismissAlert(this.parentElement.parentElement)"></button>
+                    </div>
+                `;
+                
+                document.body.appendChild(alertDiv);
+                
+                // Auto-dismiss after 5 seconds
+                setTimeout(() => {
+                    if (alertDiv.parentNode) {
+                        alertDiv.style.animation = 'fadeOut 0.3s ease-in forwards';
+                        setTimeout(() => alertDiv.remove(), 300);
+                    }
+                }, 5000);
+            }
+
+            function dismissAlert(alertElement) {
+                alertElement.style.animation = 'fadeOut 0.3s ease-in forwards';
+                setTimeout(() => alertElement.remove(), 300);
             }
         });
     </script>

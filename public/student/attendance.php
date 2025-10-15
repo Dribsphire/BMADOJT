@@ -58,7 +58,8 @@ if (!$accessCheck['can_access']) {
     
     // For regular page requests, redirect
     if ($accessCheck['reason'] === 'document_compliance') {
-        header('Location: documents.php?compliance_required=1&message=' . urlencode($accessCheck['message']));
+        $_SESSION['error'] = $accessCheck['message'];
+        header('Location: documents.php?compliance_required=1');
     } else {
         header('Location: ' . ($accessCheck['redirect_url'] ?? 'dashboard.php'));
     }
@@ -310,7 +311,16 @@ if (isset($data['error'])) {
     <?php include 'student-sidebar.php'; ?>
     
     <main>
-        
+        <!-- GPS Location Notice -->
+        <div class="row">
+            <div class="col-12">
+                <div class="alert alert-info">
+                    <i class="bi bi-geo-alt me-2"></i>
+                    <strong>Location Required:</strong> GPS location is required for attendance verification. 
+                    Make sure you're within 40 meters of your workplace location.
+                </div>
+            </div>
+        </div>
         <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
             <h1 class="h2">
                 <i class="bi bi-clock-history me-2"></i>Attendance
@@ -333,7 +343,7 @@ if (isset($data['error'])) {
 
         <!-- Current Time and Date -->
         <div class="row mb-4">
-            <div class="col-md-6">
+            <div class="col-md-12">
                 <div class="card">
                     <div class="card-body text-center">
                         <h5 class="card-title">
@@ -342,93 +352,10 @@ if (isset($data['error'])) {
                         <div class="time-display text-primary" id="current-time">
                             <?= date('Y-m-d g:i:s A') ?>
                         </div>
-                        <small class="text-muted">Updates every second</small>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-body text-center">
-                        <h5 class="card-title">
-                            <i class="bi bi-check-circle me-2"></i>Document Compliance
-                        </h5>
-                        <div class="d-flex align-items-center justify-content-center">
-                            <div class="progress-ring me-3">
-                                <svg width="60" height="60">
-                                    <circle class="background-circle" cx="30" cy="30" r="26"></circle>
-                                    <circle class="progress-circle" cx="30" cy="30" r="26" 
-                                            stroke-dasharray="<?= $compliance['compliance_percentage'] * 1.63 ?>" 
-                                            stroke-dashoffset="163"></circle>
-                                </svg>
-                            </div>
-                            <div>
-                                <div class="h4 mb-0"><?= $compliance['compliance_percentage'] ?>%</div>
-                                <small class="text-muted">
-                                    <?= $compliance['approved_count'] ?>/<?= $compliance['required_count'] ?> documents
-                                </small>
-                            </div>
-                        </div>
                     </div>
                 </div>
             </div>
         </div>
-        
-        <!-- Forgot Time-Out Notification -->
-        <?php if ($missingTimeoutCount > 0): ?>
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="alert alert-warning alert-dismissible fade show" role="alert">
-                    <div class="d-flex align-items-center">
-                        <i class="bi bi-exclamation-triangle-fill fs-4 me-3"></i>
-                        <div class="flex-grow-1">
-                            <h6 class="alert-heading mb-1">
-                                <i class="bi bi-clock-history me-2"></i>Missing Time-Outs Detected
-                            </h6>
-                            <p class="mb-2">
-                                You have <strong><?= $missingTimeoutCount ?></strong> attendance record(s) with missing time-outs. 
-                                Submit a forgot time-out request to get approval for these hours.
-                            </p>
-                            <div class="mb-2">
-                                <strong>Missing Time-Outs:</strong>
-                                <ul class="mb-0 mt-1">
-                                    <?php foreach ($missingTimeouts as $timeout): ?>
-                                    <li>
-                                        <?php 
-                                        // Handle different date formats
-                                        $timeoutDate = null;
-                                        if ($timeout['date']) {
-                                            $timeoutDate = DateTime::createFromFormat('Y-m-d', $timeout['date']);
-                                            if (!$timeoutDate) {
-                                                $timeoutDate = new DateTime($timeout['date']);
-                                            }
-                                        }
-                                        
-                                        $timeoutTimeIn = null;
-                                        if ($timeout['time_in']) {
-                                            $timeoutTimeIn = DateTime::createFromFormat('Y-m-d H:i:s', $timeout['time_in']);
-                                            if (!$timeoutTimeIn) {
-                                                $timeoutTimeIn = new DateTime($timeout['time_in']);
-                                            }
-                                        }
-                                        
-                                        echo $timeoutDate ? $timeoutDate->format('M j, Y') : ($timeout['date'] ?: 'Unknown Date');
-                                        ?> - 
-                                        <?= ucfirst($timeout['block_type']) ?> Block
-                                        (Time-in: <?= $timeoutTimeIn ? $timeoutTimeIn->format('g:i A') : $timeout['time_in'] ?>)
-                                    </li>
-                                    <?php endforeach; ?>
-                                </ul>
-                            </div>
-                            <a href="forgot_timeout.php" class="btn btn-warning btn-sm">
-                                <i class="bi bi-clock-history me-1"></i>Submit Request
-                            </a>
-                        </div>
-                    </div>
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
-            </div>
-        </div>
-        <?php endif; ?>
 
         <!-- Attendance Blocks -->
         <div class="row">
@@ -497,16 +424,7 @@ if (isset($data['error'])) {
             <?php endforeach; ?>
         </div>
 
-        <!-- GPS Location Notice -->
-        <div class="row">
-            <div class="col-12">
-                <div class="alert alert-info">
-                    <i class="bi bi-geo-alt me-2"></i>
-                    <strong>Location Required:</strong> GPS location is required for attendance verification. 
-                    Make sure you're within 40 meters of your workplace location.
-                </div>
-            </div>
-        </div>
+
 
         <?php endif; ?>
     </main>

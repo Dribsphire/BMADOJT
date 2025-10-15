@@ -1,0 +1,6 @@
+school_id,email,full_name,gender,contact,facebook_name,password,section_id
+LJD12040301,john.doe@chmsu.edu.ph,John Doe Lopez,malee,9123456788,John Doe,student,4
+JSM12040302,jane.smith@chmsu.edu.ph,Jane Smith Martinez,female,9123456789,Jane Smith,student,4
+MJG12040303,mike.johnson@chmsu.edu.ph,Mike Johnson Garcia,male,9123456790,Mike Johnson,student,4
+SLR12040304,sarah.lee@chmsu.edu.ph,Sarah Lee Rodriguez,female,9123456791,Sarah Lee,student,4
+DLW12040305,david.wilson@chmsu.edu.ph,David Wilson Lopez,male,9123456792,David Wilson,student,4
