@@ -34,8 +34,30 @@ $user = $authMiddleware->getCurrentUser();
 
 // Get student profile
 $pdo = Database::getInstance();
+$userId = is_array($user) ? $user['id'] : $user->id;
+
+// Fetch complete user data from users table
+$stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
+$stmt->execute([$userId]);
+$userData = $stmt->fetch();
+
+// If user data is not found in database, use session data as fallback
+if (!$userData) {
+    $userData = [
+        'id' => $userId,
+        'full_name' => $_SESSION['full_name'] ?? 'Student',
+        'email' => $_SESSION['email'] ?? '',
+        'school_id' => $_SESSION['school_id'] ?? '',
+        'role' => $_SESSION['role'] ?? 'student',
+        'contact' => $_SESSION['contact'] ?? '',
+        'facebook_name' => $_SESSION['facebook_name'] ?? '',
+        'profile_picture' => $_SESSION['profile_picture'] ?? null
+    ];
+}
+
+// Get student profile
 $stmt = $pdo->prepare("SELECT * FROM student_profiles WHERE user_id = ?");
-$stmt->execute([$user->id]);
+$stmt->execute([$userId]);
 $profile = $stmt->fetch();
 
 // Handle form submission
@@ -45,10 +67,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'upload_profile_picture') {
         // Handle profile picture upload
         if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] === UPLOAD_ERR_OK) {
-            $result = $fileUploadService->uploadProfilePicture($_FILES['profile_picture'], $user->id);
+            $result = $fileUploadService->uploadProfilePicture($_FILES['profile_picture'], $userId);
             
             if ($result['success']) {
                 $_SESSION['success'] = $result['message'];
+                // Update session with new profile picture path
+                if (isset($result['profile_picture_path'])) {
+                    $_SESSION['profile_picture'] = $result['profile_picture_path'];
+                }
             } else {
                 $_SESSION['error'] = $result['message'];
             }
@@ -62,10 +88,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif ($action === 'delete_profile_picture') {
         // Handle profile picture deletion
-        $result = $fileUploadService->deleteProfilePicture($user->id);
+        $result = $fileUploadService->deleteProfilePicture($userId);
         
         if ($result['success']) {
             $_SESSION['success'] = $result['message'];
+            // Clear profile picture from session
+            unset($_SESSION['profile_picture']);
         } else {
             $_SESSION['error'] = $result['message'];
         }
@@ -95,7 +123,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Check for duplicate email (excluding current user)
         if (empty($errors)) {
             $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ? AND id != ?");
-            $stmt->execute([$email, $user->id]);
+            $stmt->execute([$email, $userId]);
             if ($stmt->fetch()) {
                 $errors[] = 'Email already in use by another account.';
             }
@@ -104,21 +132,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (empty($errors)) {
             // Update profile
             $stmt = $pdo->prepare("UPDATE users SET full_name = ?, email = ?, contact = ?, facebook_name = ? WHERE id = ?");
-            $stmt->execute([$full_name, $email, $contact, $facebook_name, $user->id]);
+            $stmt->execute([$full_name, $email, $contact, $facebook_name, $userId]);
             
             // Log activity
+            $schoolId = is_array($user) ? $user['school_id'] : $user->school_id;
             $stmt = $pdo->prepare("INSERT INTO activity_logs (user_id, action, description) VALUES (?, ?, ?)");
             $stmt->execute([
-                $user->id,
+                $userId,
                 'profile_update',
-                "User {$user->school_id} updated profile"
+                "User {$schoolId} updated profile"
             ]);
             
             // Update session user data
-            $user->full_name = $full_name;
-            $user->email = $email;
-            $user->contact = $contact;
-            $user->facebook_name = $facebook_name;
+            $_SESSION['full_name'] = $full_name;
+            $_SESSION['email'] = $email;
+            $_SESSION['contact'] = $contact;
+            $_SESSION['facebook_name'] = $facebook_name;
+            
+            // Update the userData array for display
+            $userData['full_name'] = $full_name;
+            $userData['email'] = $email;
+            $userData['contact'] = $contact;
+            $userData['facebook_name'] = $facebook_name;
             
             $_SESSION['success'] = 'Profile updated successfully!';
             header('Location: profile.php');
@@ -140,8 +175,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Validation
         if (empty($current_password)) {
             $errors[] = 'Current password is required.';
-        } elseif (!$user->verifyPassword($current_password)) {
-            $errors[] = 'Current password is incorrect.';
+        } else {
+            // Verify current password
+            $stmt = $pdo->prepare("SELECT password_hash FROM users WHERE id = ?");
+            $stmt->execute([$userId]);
+            $userData = $stmt->fetch();
+            if (!$userData || !password_verify($current_password, $userData['password_hash'])) {
+                $errors[] = 'Current password is incorrect.';
+            }
         }
         
         if (empty($new_password)) {
@@ -158,14 +199,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Update password
             $hashed_password = password_hash($new_password, PASSWORD_DEFAULT);
             $stmt = $pdo->prepare("UPDATE users SET password_hash = ? WHERE id = ?");
-            $stmt->execute([$hashed_password, $user->id]);
+            $stmt->execute([$hashed_password, $userId]);
             
             // Log activity
+            $schoolId = is_array($user) ? $user['school_id'] : $user->school_id;
             $stmt = $pdo->prepare("INSERT INTO activity_logs (user_id, action, description) VALUES (?, ?, ?)");
             $stmt->execute([
-                $user->id,
+                $userId,
                 'password_change',
-                "User {$user->school_id} changed password"
+                "User {$schoolId} changed password"
             ]);
             
             $_SESSION['success'] = 'Password changed successfully!';
@@ -211,7 +253,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $profileData['company_head'], $profileData['student_position'], 
                     $profileData['ojt_start_date'], $profileData['workplace_latitude'], 
                     $profileData['workplace_longitude'], $profileData['workplace_location_locked'], 
-                    $user->id
+                    $userId
                 ]);
                 
                 if ($stmt->rowCount() === 0) {
@@ -229,7 +271,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'on_track', NOW(), NOW())
                 ");
                 $stmt->execute([
-                    $user->id, $profileData['workplace_name'], $profileData['supervisor_name'], 
+                    $userId, $profileData['workplace_name'], $profileData['supervisor_name'], 
                     $profileData['company_head'], $profileData['student_position'], 
                     $profileData['ojt_start_date'], $profileData['workplace_latitude'], 
                     $profileData['workplace_longitude'], $profileData['workplace_location_locked']
@@ -248,7 +290,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Get updated profile after potential changes
 $stmt = $pdo->prepare("SELECT * FROM student_profiles WHERE user_id = ?");
-$stmt->execute([$user->id]);
+$stmt->execute([$userId]);
 $profile = $stmt->fetch();
 
 ?>
@@ -260,6 +302,7 @@ $profile = $stmt->fetch();
     <title>My Profile | OJT Route</title>
     <link rel="stylesheet" href="../css/style.css">
     <link rel="stylesheet" href="../css/sidebarstyle.css">
+    <link rel="icon" type="image/png" href="../images/CHMSU.png">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -375,7 +418,7 @@ $profile = $stmt->fetch();
             <div class="row">
                 <div class="col-12">   
                     
-                            <!-- Workplace Status -->
+                <!-- Workplace Status -->
         <div class="row mb-4">
             <div class="col-12">
                 <div class="card workplace-status <?= $profile && $profile['workplace_location_locked'] ? 'complete' : '' ?>">
@@ -396,7 +439,7 @@ $profile = $stmt->fetch();
                 </div>
             </div>
         </div>
-
+                    
                     <!-- Success/Error Messages -->
                     <?php if (isset($_SESSION['success'])): ?>
                         <div class="alert alert-success alert-fixed alert-auto-dismiss" role="alert">
@@ -404,7 +447,7 @@ $profile = $stmt->fetch();
                                 <i class="bi bi-check-circle me-2"></i>
                                 <span><?= htmlspecialchars($_SESSION['success']) ?></span>
                                 <button type="button" class="btn-close ms-auto" onclick="dismissAlert(this.parentElement.parentElement)"></button>
-                            </div>
+                        </div>
                         </div>
                         <script>setTimeout(() => document.querySelector('.alert-fixed').remove(), 5000);</script>
                     <?php endif; ?>
@@ -415,7 +458,7 @@ $profile = $stmt->fetch();
                                 <i class="bi bi-exclamation-triangle me-2"></i>
                                 <span><?= htmlspecialchars($_SESSION['error']) ?></span>
                                 <button type="button" class="btn-close ms-auto" onclick="dismissAlert(this.parentElement.parentElement)"></button>
-                            </div>
+                        </div>
                         </div>
                         <script>setTimeout(() => { const alert = document.querySelector('.alert-fixed'); if(alert) alert.remove(); }, 5000);</script>
                         <?php unset($_SESSION['error']); ?>
@@ -437,7 +480,7 @@ $profile = $stmt->fetch();
                                     <div class="row align-items-center">
                                         <div class="col-md-3 text-center">
                                             <?php 
-                                            $profilePictureUrl = $fileUploadService->getProfilePictureUrl($user->profile_picture);
+                                            $profilePictureUrl = $fileUploadService->getProfilePictureUrl($userData['profile_picture'] ?? null);
                                             ?>
                                             <img src="<?= $profilePictureUrl ?>" 
                                                  alt="Profile Picture" 
@@ -464,7 +507,7 @@ $profile = $stmt->fetch();
                                                 </button>
                                             </form>
                                             
-                                            <?php if ($user->profile_picture): ?>
+                                            <?php if ($userData['profile_picture'] ?? null): ?>
                                                 <form method="POST" class="d-inline">
                                                     <input type="hidden" name="action" value="delete_profile_picture">
                                                     <button type="submit" 
@@ -488,14 +531,14 @@ $profile = $stmt->fetch();
                                                            class="form-control" 
                                                            id="full_name" 
                                                            name="full_name" 
-                                                           value="<?= htmlspecialchars($user->full_name) ?>" 
+                                                           value="<?= htmlspecialchars($userData['full_name'] ?? '') ?>" 
                                                            required>
                                                 </div>
                                             </div>
                                             <div class="col-md-6">
                                                 <div class="mb-3">
                                                     <label class="form-label">School ID</label>
-                                                    <input type="text" class="form-control" value="<?= htmlspecialchars($user->school_id) ?>" readonly>
+                                                    <input type="text" class="form-control" value="<?= htmlspecialchars($userData['school_id'] ?? '') ?>" readonly>
                                                     <div class="form-text">School ID cannot be changed</div>
                                                 </div>
                                             </div>
@@ -506,14 +549,14 @@ $profile = $stmt->fetch();
                                                            class="form-control" 
                                                            id="email" 
                                                            name="email" 
-                                                           value="<?= htmlspecialchars($user->email) ?>" 
+                                                           value="<?= htmlspecialchars($userData['email'] ?? '') ?>" 
                                                            required>
                                                 </div>
                                             </div>
                                             <div class="col-md-6">
                                                 <div class="mb-3">
                                                     <label class="form-label">Role</label>
-                                                    <input type="text" class="form-control" value="<?= ucfirst($user->role) ?>" readonly>
+                                                    <input type="text" class="form-control" value="<?= ucfirst($userData['role'] ?? '') ?>" readonly>
                                                 </div>
                                             </div>
                                             <div class="col-md-6">
@@ -523,7 +566,7 @@ $profile = $stmt->fetch();
                                                            class="form-control" 
                                                            id="contact" 
                                                            name="contact" 
-                                                           value="<?= htmlspecialchars($user->contact ?? '') ?>" 
+                                                           value="<?= htmlspecialchars($userData['contact'] ?? '') ?>" 
                                                            placeholder="Phone number (optional)">
                                                 </div>
                                             </div>
@@ -534,7 +577,7 @@ $profile = $stmt->fetch();
                                                            class="form-control" 
                                                            id="facebook_name" 
                                                            name="facebook_name" 
-                                                           value="<?= htmlspecialchars($user->facebook_name ?? '') ?>" 
+                                                           value="<?= htmlspecialchars($userData['facebook_name'] ?? '') ?>" 
                                                            placeholder="Facebook name (optional)">
                                                 </div>
                                             </div>
@@ -768,7 +811,7 @@ $profile = $stmt->fetch();
                                                 <i class="bi bi-arrow-left me-2" style="color:#0ea539;"></i>Request Edit
                                             </a>
                                         </div>
-                                    </form> 
+                                    </form>
                                 </div>
                             </div>
                         </div>
@@ -780,10 +823,10 @@ $profile = $stmt->fetch();
                                         <i class="bi bi-info-circle me-2"></i>Profile Information
                                     </h5>
                                     <p class="card-text">
-                                        <strong>Name:</strong> <?= htmlspecialchars($user->getDisplayName()) ?><br>
-                                        <strong>School ID:</strong> <?= htmlspecialchars($user->school_id) ?><br>
-                                        <strong>Email:</strong> <?= htmlspecialchars($user->email) ?><br>
-                                        <strong>Section:</strong> <?= htmlspecialchars($user->section_name ?? 'Not assigned') ?>
+                                        <strong>Name:</strong> <?= htmlspecialchars($userData['full_name'] ?? $userData['school_id'] ?? 'Student') ?><br>
+                                        <strong>School ID:</strong> <?= htmlspecialchars($userData['school_id'] ?? '') ?><br>
+                                        <strong>Email:</strong> <?= htmlspecialchars($userData['email'] ?? '') ?><br>
+                                        <strong>Section:</strong> <?= htmlspecialchars($userData['section_name'] ?? 'Not assigned') ?>
                                     </p>
                                 </div>
                             </div>
@@ -973,8 +1016,12 @@ $profile = $stmt->fetch();
             const defaultLng = 124.6442;
             
             // Use existing coordinates or default
-            const lat = <?= $profile && $profile['workplace_latitude'] ? $profile['workplace_latitude'] : 'defaultLat' ?>;
-            const lng = <?= $profile && $profile['workplace_longitude'] ? $profile['workplace_longitude'] : 'defaultLng' ?>;
+            let lat = defaultLat;
+            let lng = defaultLng;
+            <?php if ($profile && $profile['workplace_latitude'] && $profile['workplace_longitude']): ?>
+            lat = <?= $profile['workplace_latitude'] ?>;
+            lng = <?= $profile['workplace_longitude'] ?>;
+            <?php endif; ?>
             
             map = L.map('map').setView([lat, lng], 15);
             

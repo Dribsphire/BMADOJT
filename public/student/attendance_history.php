@@ -62,6 +62,7 @@ $totalPages = ceil($totalRecords / $limit);
     <title>Attendance History - OJT Route</title>
     <link rel="stylesheet" href="../css/style.css">
     <link rel="stylesheet" href="../css/sidebarstyle.css">
+    <link rel="icon" type="image/png" href="../images/CHMSU.png">
     <script type="text/javascript" src="../js/sidebarSlide.js" defer></script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -181,10 +182,7 @@ $totalPages = ceil($totalRecords / $limit);
                                     <i class="bi bi-calendar3 me-2"></i>Attendance Calendar
                                 </h5>
                                 <div class="export-actions">
-                                    <a href="export_attendance.php" class="btn btn-success btn-sm" title="Export to CSV">
-                                        <i class="bi bi-download"></i> Export CSV
-                                    </a>
-                                    <button class="btn btn-info btn-sm" onclick="printAttendance()" title="Print Report">
+                                    <button class="btn btn-info btn-sm" onclick="showPrintOptions()" title="Print Report">
                                         <i class="bi bi-printer"></i> Print
                                     </button>
                                 </div>
@@ -263,15 +261,35 @@ $totalPages = ceil($totalRecords / $limit);
                 events: function(info, successCallback, failureCallback) {
                     // Fetch attendance data for the calendar
                     fetch('attendance_calendar_data.php')
-                        .then(response => response.json())
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error(`HTTP error! status: ${response.status}`);
+                            }
+                            return response.json();
+                        })
                         .then(data => {
+                            // Check if data is an array
+                            if (!Array.isArray(data)) {
+                                console.error('Invalid data format:', data);
+                                successCallback([]);
+                                return;
+                            }
+                            
                             const events = data.map(record => {
                                 const status = getAttendanceStatus(record);
                                 const statusClass = getStatusColorClass(status);
                                 
+                                // Handle missed days specially
+                                let title;
+                                if (record.is_missed || record.block_type === 'missed') {
+                                    title = `Missed - No Attendance`;
+                                } else {
+                                    title = `${record.block_type.charAt(0).toUpperCase() + record.block_type.slice(1)} - ${status}`;
+                                }
+                                
                                 return {
                                     id: record.id,
-                                    title: `${record.block_type.charAt(0).toUpperCase() + record.block_type.slice(1)} - ${status}`,
+                                    title: title,
                                     start: record.date,
                                     allDay: true,
                                     className: `event-${status}`,
@@ -286,7 +304,7 @@ $totalPages = ceil($totalRecords / $limit);
                         })
                         .catch(error => {
                             console.error('Error loading calendar events:', error);
-                            failureCallback(error);
+                            successCallback([]); // Return empty array instead of calling failureCallback
                         });
                 },
                 eventClick: function(info) {
@@ -313,6 +331,11 @@ $totalPages = ceil($totalRecords / $limit);
         }
 
         function getAttendanceStatus(record) {
+            // Check if this is a missed day (virtual record)
+            if (record.is_missed || record.block_type === 'missed') {
+                return 'missed';
+            }
+            
             if (record.time_in === null) {
                 return 'missed';
             }
@@ -337,99 +360,239 @@ $totalPages = ceil($totalRecords / $limit);
             return classes[status] || 'event-missed';
         }
         
-        // Print attendance function
-        function printAttendance() {
-            // Create a new window for printing
-            const printWindow = window.open('', '_blank');
+        // Show print options modal
+        function showPrintOptions() {
+            const modalHtml = `
+                <div class="modal fade" id="printOptionsModal" tabindex="-1">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header bg-primary text-white">
+                                <h5 class="modal-title">
+                                    <i class="bi bi-printer me-2"></i>Print Attendance Report
+                                </h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="card border-primary">
+                                            <div class="card-header bg-primary text-white">
+                                                <h6 class="mb-0">
+                                                    <i class="bi bi-calendar-month me-2"></i>Print Specific Month
+                                                </h6>
+                                            </div>
+                                            <div class="card-body">
+                                                <div class="mb-3">
+                                                    <label for="printMonth" class="form-label">Select Month:</label>
+                                                    <input type="month" class="form-control" id="printMonth">
+                                                </div>
+                                                <button class="btn btn-primary w-100" onclick="printMonthlyReport()">
+                                                    <i class="bi bi-printer me-2"></i>Print Monthly Report
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="card border-success">
+                                            <div class="card-header bg-success text-white">
+                                                <h6 class="mb-0">
+                                                    <i class="bi bi-calendar-range me-2"></i>Print All Records
+                                                </h6>
+                                            </div>
+                                            <div class="card-body">
+                                                <p class="text-muted mb-3">Print complete OJT attendance records with detailed breakdown.</p>
+                                                <button class="btn btn-success w-100" onclick="printAllRecords()">
+                                                    <i class="bi bi-printer me-2"></i>Print All Records
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
             
-            // Get current date for the report
-            const currentDate = new Date().toLocaleDateString('en-US', {
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
+            // Remove existing modal if any
+            const existingModal = document.getElementById('printOptionsModal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            // Add modal to body
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('printOptionsModal'));
+            modal.show();
+        }
+
+        // Print monthly report
+        function printMonthlyReport() {
+            const selectedMonth = document.getElementById('printMonth').value;
+            if (!selectedMonth) {
+                alert('Please select a month to print.');
+                return;
+            }
+            
+            // Fetch attendance data for the selected month
+            fetch(`attendance_calendar_data.php?month=${selectedMonth}`)
+                .then(response => response.json())
+                .then(data => {
+                    printMonthlyAttendance(data, selectedMonth);
+                })
+                .catch(error => {
+                    console.error('Error fetching monthly data:', error);
+                    alert('Error loading attendance data.');
+                });
+        }
+
+        // Print all records
+        function printAllRecords() {
+            fetch('attendance_calendar_data.php')
+                .then(response => response.json())
+                .then(data => {
+                    printAllAttendance(data);
+                })
+                .catch(error => {
+                    console.error('Error fetching all data:', error);
+                    alert('Error loading attendance data.');
+                });
+        }
+
+        // Print monthly attendance function
+        function printMonthlyAttendance(data, month) {
+            const printWindow = window.open('', '_blank');
+            const monthName = new Date(month + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+            
+            // Calculate totals
+            let totalHours = 0;
+            let morningHours = 0;
+            let afternoonHours = 0;
+            let overtimeHours = 0;
+            let completedDays = 0;
+            let incompleteDays = 0;
+            let missedDays = 0;
+            
+            data.forEach(record => {
+                if (record.hours_earned) {
+                    totalHours += parseFloat(record.hours_earned);
+                    if (record.block_type === 'morning') morningHours += parseFloat(record.hours_earned);
+                    if (record.block_type === 'afternoon') afternoonHours += parseFloat(record.hours_earned);
+                    if (record.block_type === 'overtime') overtimeHours += parseFloat(record.hours_earned);
+                }
+                
+                if (record.time_in && record.time_out) completedDays++;
+                else if (record.time_in && !record.time_out) incompleteDays++;
+                else if (!record.time_in) missedDays++;
             });
             
-            // Create print content
             const printContent = `
                 <!DOCTYPE html>
                 <html>
                 <head>
-                    <title>Attendance Report - ${currentDate}</title>
+                    <title>Monthly Attendance Report - ${monthName}</title>
                     <style>
-                        body { font-family: Arial, sans-serif; margin: 20px; }
-                        .header { text-align: center; margin-bottom: 30px; }
+                        body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+                        .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 20px; }
                         .header h1 { color: #333; margin-bottom: 5px; }
                         .header p { color: #666; margin: 0; }
-                        .calendar-container { 
-                            border: 1px solid #ddd; 
-                            border-radius: 8px; 
-                            padding: 20px; 
-                            margin-bottom: 20px;
-                        }
-                        .legend { 
-                            display: flex; 
-                            justify-content: center; 
-                            gap: 20px; 
-                            margin-bottom: 20px;
-                            flex-wrap: wrap;
-                        }
-                        .legend-item { 
-                            display: flex; 
-                            align-items: center; 
-                            gap: 5px; 
-                        }
-                        .legend-color { 
-                            width: 12px; 
-                            height: 12px; 
-                            border-radius: 2px; 
-                        }
-                        .completed { background-color: rgb(132, 207, 150); }
-                        .incomplete { background-color: #ffc107; }
-                        .missed { background-color: #dc3545; }
-                        .pending { background-color: #0ea539; }
-                        .footer { 
-                            text-align: center; 
-                            margin-top: 30px; 
-                            color: #666; 
-                            font-size: 12px; 
-                        }
-                        @media print {
-                            body { margin: 0; }
-                            .no-print { display: none; }
-                        }
+                        .summary { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 30px; }
+                        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+                        .summary-item { text-align: center; padding: 10px; background: white; border-radius: 5px; }
+                        .summary-item h4 { margin: 0; color: #0ea539; }
+                        .summary-item p { margin: 5px 0 0 0; color: #666; }
+                        table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+                        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+                        th { background-color: #0ea539; color: white; }
+                        .status-completed { color: #28a745; font-weight: bold; }
+                        .status-incomplete { color: #ffc107; font-weight: bold; }
+                        .status-missed { color: #dc3545; font-weight: bold; }
+                        .total-row { background-color: #f8f9fa; font-weight: bold; }
+                        .footer { text-align: center; margin-top: 30px; color: #666; font-size: 12px; }
+                        @media print { body { margin: 0; } }
                     </style>
                 </head>
                 <body>
                     <div class="header">
-                        <h1>Attendance Report</h1>
-                        <p>Generated on ${currentDate}</p>
-                    </div>
-                    
-                    <div class="calendar-container">
-                        <div class="legend">
-                            <div class="legend-item">
-                                <div class="legend-color completed"></div>
-                                <span>Completed</span>
-                            </div>
-                            <div class="legend-item">
-                                <div class="legend-color incomplete"></div>
-                                <span>Incomplete</span>
-                            </div>
-                            <div class="legend-item">
-                                <div class="legend-color missed"></div>
-                                <span>Missed</span>
-                            </div>
-                            <div class="legend-item">
-                                <div class="legend-color pending"></div>
-                                <span>Pending Request</span>
+                        <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
+                            <img src="../images/CHMSU.png" alt="CHMSU Logo" style="height: 80px; margin-right: 20px;">
+                            <div>
+                                <h1 style="margin: 0; color: #0ea539;">Monthly Attendance Report</h1>
+                                <p style="margin: 5px 0 0 0; color: #666;">Carlos Hilado Memorial State University</p>
                             </div>
                         </div>
-                        <div id="calendar-print"></div>
+                        <p style="text-align: center; color: #666; margin: 0;">${monthName} - Generated on ${new Date().toLocaleDateString()}</p>
                     </div>
                     
+                    <div class="summary">
+                        <h3>Summary</h3>
+                        <div class="summary-grid">
+                            <div class="summary-item">
+                                <h4>${totalHours.toFixed(2)}</h4>
+                                <p>Total Hours</p>
+                            </div>
+                            <div class="summary-item">
+                                <h4>${completedDays}</h4>
+                                <p>Completed Days</p>
+                            </div>
+                            <div class="summary-item">
+                                <h4>${incompleteDays}</h4>
+                                <p>Incomplete Days</p>
+                            </div>
+                            <div class="summary-item">
+                                <h4>${missedDays}</h4>
+                                <p>Missed Days</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Block</th>
+                                <th>Time In</th>
+                                <th>Time Out</th>
+                                <th>Hours</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.map(record => {
+                                const status = getAttendanceStatus(record);
+                                const statusClass = status === 'completed' ? 'status-completed' : 
+                                                   status === 'incomplete' ? 'status-incomplete' : 'status-missed';
+                                const statusText = status === 'completed' ? 'Completed' : 
+                                                status === 'incomplete' ? 'Incomplete' : 'Missed';
+                                
+                                return `
+                                    <tr>
+                                        <td>${new Date(record.date).toLocaleDateString()}</td>
+                                        <td>${record.block_type.charAt(0).toUpperCase() + record.block_type.slice(1)}</td>
+                                        <td>${record.time_in ? new Date(record.time_in).toLocaleTimeString() : 'N/A'}</td>
+                                        <td>${record.time_out ? new Date(record.time_out).toLocaleTimeString() : 'N/A'}</td>
+                                        <td>${record.hours_earned || 0}</td>
+                                        <td class="${statusClass}">${statusText}</td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                            <tr class="total-row">
+                                <td colspan="4"><strong>Total Hours</strong></td>
+                                <td><strong>${totalHours.toFixed(2)}</strong></td>
+                                <td></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    
                     <div class="footer">
-                        <p>This report was generated from the OJT Attendance System</p>
+                        <p><strong>Carlos Hilado Memorial State University</strong></p>
+                        <p>OJT Attendance Management System</p>
+                        <p>This report was generated on ${new Date().toLocaleDateString()}</p>
                     </div>
                 </body>
                 </html>
@@ -438,7 +601,160 @@ $totalPages = ceil($totalRecords / $limit);
             printWindow.document.write(printContent);
             printWindow.document.close();
             
-            // Wait for content to load, then print
+            printWindow.onload = function() {
+                printWindow.print();
+                printWindow.close();
+            };
+        }
+
+        // Print all attendance function
+        function printAllAttendance(data) {
+            const printWindow = window.open('', '_blank');
+            
+            // Calculate totals
+            let totalHours = 0;
+            let morningHours = 0;
+            let afternoonHours = 0;
+            let overtimeHours = 0;
+            let completedDays = 0;
+            let incompleteDays = 0;
+            let missedDays = 0;
+            
+            data.forEach(record => {
+                if (record.hours_earned) {
+                    totalHours += parseFloat(record.hours_earned);
+                    if (record.block_type === 'morning') morningHours += parseFloat(record.hours_earned);
+                    if (record.block_type === 'afternoon') afternoonHours += parseFloat(record.hours_earned);
+                    if (record.block_type === 'overtime') overtimeHours += parseFloat(record.hours_earned);
+                }
+                
+                if (record.time_in && record.time_out) completedDays++;
+                else if (record.time_in && !record.time_out) incompleteDays++;
+                else if (!record.time_in) missedDays++;
+            });
+            
+            const printContent = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Complete OJT Attendance Report</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+                        .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 20px; }
+                        .header h1 { color: #333; margin-bottom: 5px; }
+                        .header p { color: #666; margin: 0; }
+                        .summary { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 30px; }
+                        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+                        .summary-item { text-align: center; padding: 10px; background: white; border-radius: 5px; }
+                        .summary-item h4 { margin: 0; color: #0ea539; }
+                        .summary-item p { margin: 5px 0 0 0; color: #666; }
+                        table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+                        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+                        th { background-color: #0ea539; color: white; }
+                        .status-completed { color: #28a745; font-weight: bold; }
+                        .status-incomplete { color: #ffc107; font-weight: bold; }
+                        .status-missed { color: #dc3545; font-weight: bold; }
+                        .total-row { background-color: #f8f9fa; font-weight: bold; }
+                        .footer { text-align: center; margin-top: 30px; color: #666; font-size: 12px; }
+                        @media print { body { margin: 0; } }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
+                            <img src="../images/CHMSU.png" alt="CHMSU Logo" style="height: 80px; margin-right: 20px;">
+                            <div>
+                                <h1 style="margin: 0; color: #0ea539;">Complete OJT Attendance Report</h1>
+                                <p style="margin: 5px 0 0 0; color: #666;">Carlos Hilado Memorial State University</p>
+                            </div>
+                        </div>
+                        <p style="text-align: center; color: #666; margin: 0;">Generated on ${new Date().toLocaleDateString()}</p>
+                    </div>
+                    
+                    <div class="summary">
+                        <h3>Overall Summary</h3>
+                        <div class="summary-grid">
+                            <div class="summary-item">
+                                <h4>${totalHours.toFixed(2)}</h4>
+                                <p>Total Hours</p>
+                            </div>
+                            <div class="summary-item">
+                                <h4>${morningHours.toFixed(2)}</h4>
+                                <p>Morning Hours</p>
+                            </div>
+                            <div class="summary-item">
+                                <h4>${afternoonHours.toFixed(2)}</h4>
+                                <p>Afternoon Hours</p>
+                            </div>
+                            <div class="summary-item">
+                                <h4>${overtimeHours.toFixed(2)}</h4>
+                                <p>Overtime Hours</p>
+                            </div>
+                            <div class="summary-item">
+                                <h4>${completedDays}</h4>
+                                <p>Completed Days</p>
+                        </div>
+                            <div class="summary-item">
+                                <h4>${incompleteDays}</h4>
+                                <p>Incomplete Days</p>
+                            </div>
+                            <div class="summary-item">
+                                <h4>${missedDays}</h4>
+                                <p>Missed Days</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Block</th>
+                                <th>Time In</th>
+                                <th>Time Out</th>
+                                <th>Hours</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.map(record => {
+                                const status = getAttendanceStatus(record);
+                                const statusClass = status === 'completed' ? 'status-completed' : 
+                                                   status === 'incomplete' ? 'status-incomplete' : 'status-missed';
+                                const statusText = status === 'completed' ? 'Completed' : 
+                                                status === 'incomplete' ? 'Incomplete' : 'Missed';
+                                
+                                return `
+                                    <tr>
+                                        <td>${new Date(record.date).toLocaleDateString()}</td>
+                                        <td>${record.block_type.charAt(0).toUpperCase() + record.block_type.slice(1)}</td>
+                                        <td>${record.time_in ? new Date(record.time_in).toLocaleTimeString() : 'N/A'}</td>
+                                        <td>${record.time_out ? new Date(record.time_out).toLocaleTimeString() : 'N/A'}</td>
+                                        <td>${record.hours_earned || 0}</td>
+                                        <td class="${statusClass}">${statusText}</td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                            <tr class="total-row">
+                                <td colspan="4"><strong>Total Hours</strong></td>
+                                <td><strong>${totalHours.toFixed(2)}</strong></td>
+                                <td></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    
+                    <div class="footer">
+                        <p><strong>Carlos Hilado Memorial State University</strong></p>
+                        <p>OJT Attendance Management System</p>
+                        <p>This report was generated on ${new Date().toLocaleDateString()}</p>
+                    </div>
+                </body>
+                </html>
+            `;
+            
+            printWindow.document.write(printContent);
+            printWindow.document.close();
+            
             printWindow.onload = function() {
                 printWindow.print();
                 printWindow.close();
@@ -454,10 +770,29 @@ $totalPages = ceil($totalRecords / $limit);
             
             // Fetch all attendance records for this date
             fetch(`attendance_calendar_data.php?date=${dateStr}`)
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
                 .then(records => {
+                    // Check if data is an array
+                    if (!Array.isArray(records)) {
+                        console.error('Invalid records format:', records);
+                        showNoAttendanceModal(clickedDate);
+                        return;
+                    }
+                    
                     if (records.length === 0) {
                         showNoAttendanceModal(clickedDate);
+                        return;
+                    }
+                    
+                    // Check if this is a missed day
+                    const missedRecord = records.find(r => r.is_missed || r.block_type === 'missed');
+                    if (missedRecord) {
+                        showMissedDayModal(clickedDate);
                         return;
                     }
                     
@@ -614,6 +949,69 @@ $totalPages = ceil($totalRecords / $limit);
                     </div>
                 </div>
             `;
+        }
+        
+        function showMissedDayModal(date) {
+            const dateFormatted = date.toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+            });
+            
+            const modalHtml = `
+                <div class="modal fade" id="dayAttendanceModal" tabindex="-1">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header bg-danger text-white">
+                                <h5 class="modal-title">
+                                    <i class="bi bi-calendar-x me-2"></i>${dateFormatted}
+                                    <span class="badge bg-white text-danger ms-2">Missed Day</span>
+                                </h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="row">
+                                    <div class="col-12">
+                                        <div class="card border-danger">
+                                            <div class="card-header bg-danger text-white">
+                                                <h6 class="mb-0">
+                                                    <i class="bi bi-exclamation-triangle me-2"></i>No Attendance Recorded
+                                                </h6>
+                                            </div>
+                                            <div class="card-body text-center py-4">
+                                                <i class="bi bi-calendar-x text-danger" style="font-size: 3rem;"></i>
+                                                <h5 class="text-danger mt-3">Missed Day</h5>
+                                                <p class="text-muted">No attendance was recorded for this date during your OJT period.</p>
+                                                <div class="alert alert-warning mt-3">
+                                                    <i class="bi bi-info-circle me-2"></i>
+                                                    <strong>Note:</strong> This day is marked as missed because no attendance was recorded during your scheduled OJT period.
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Remove existing modal if any
+            const existingModal = document.getElementById('dayAttendanceModal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            // Add modal to body
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('dayAttendanceModal'));
+            modal.show();
         }
         
         function showNoAttendanceModal(date) {

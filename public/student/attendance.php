@@ -20,6 +20,7 @@ use App\Controllers\AttendanceController;
 use App\Middleware\AuthMiddleware;
 use App\Middleware\AttendanceMiddleware;
 use App\Services\AttendanceIntegrationService;
+use App\Services\GeolocationService;
 
 // Check authentication
 $authMiddleware = new AuthMiddleware();
@@ -128,6 +129,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 echo json_encode($result);
                 break;
                 
+            case 'check_location':
+                // Check location radius
+                $latitude = floatval($_POST['latitude'] ?? 0);
+                $longitude = floatval($_POST['longitude'] ?? 0);
+                
+                $pdo = App\Utils\Database::getInstance();
+                $geolocationService = new GeolocationService($pdo);
+                $result = $geolocationService->verifyAttendanceLocation($_SESSION['user_id'], $latitude, $longitude);
+                
+                // Clear any output buffer before sending JSON
+                while (ob_get_level()) {
+                    ob_end_clean();
+                }
+                echo json_encode($result);
+                break;
+                
             default:
                 // Clear any output buffer before sending JSON
                 while (ob_get_level()) {
@@ -210,6 +227,7 @@ if (isset($data['error'])) {
     <title>Attendance - OJT Management System</title>
     <link rel="stylesheet" href="../css/style.css">
     <link rel="stylesheet" href="../css/sidebarstyle.css">
+    <link rel="icon" type="image/png" href="../images/CHMSU.png">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
     <style>
@@ -311,13 +329,15 @@ if (isset($data['error'])) {
     <?php include 'student-sidebar.php'; ?>
     
     <main>
-        <!-- GPS Location Notice -->
-        <div class="row">
+        <!-- Location Status -->
+        <div class="row mb-3">
             <div class="col-12">
-                <div class="alert alert-info">
+                <div id="locationStatus" class="alert alert-warning">
                     <i class="bi bi-geo-alt me-2"></i>
-                    <strong>Location Required:</strong> GPS location is required for attendance verification. 
-                    Make sure you're within 40 meters of your workplace location.
+                    <span id="locationMessage">Checking your location...</span>
+                    <button class="btn btn-sm btn-outline-primary ms-2" onclick="checkLocation()">
+                        <i class="bi bi-arrow-clockwise"></i> Check Location
+                    </button>
                 </div>
             </div>
         </div>
@@ -406,7 +426,7 @@ if (isset($data['error'])) {
                             
                             <?php if ($block['can_time_out']): ?>
                             <button class="btn btn-success btn-attendance" 
-                                    onclick="timeOut('<?= $blockKey ?>')">
+                                    onclick="showTimeOutConfirmation('<?= $blockKey ?>')">
                                 <i class="bi bi-stop-circle me-2"></i>Time Out
                             </button>
                             <?php endif; ?>
@@ -443,6 +463,41 @@ if (isset($data['error'])) {
         </div>
     </div>
 
+    <!-- Time Out Confirmation Modal -->
+    <div class="modal fade" id="timeOutConfirmModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-question-circle me-2 text-warning"></i>Confirm Time Out
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="text-center mb-3">
+                        <i class="bi bi-stop-circle text-success" style="font-size: 3rem;"></i>
+                    </div>
+                    <p class="text-center mb-3">
+                        Are you sure you want to <strong>Time Out</strong> from your current work block?
+                    </p>
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <strong>Note:</strong> This action will record your time out and cannot be undone. 
+                        Make sure you are at your designated workplace location.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="bi bi-x-circle me-2"></i>Cancel
+                    </button>
+                    <button type="button" class="btn btn-success" id="confirmTimeOutBtn">
+                        <i class="bi bi-stop-circle me-2"></i>Yes, Time Out
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="js/photo-capture.js"></script>
     <script src="js/photo-modal.js"></script>
@@ -466,6 +521,11 @@ if (isset($data['error'])) {
         }
         
         setInterval(updateCurrentTime, 1000);
+        
+        // Check location on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            checkLocation();
+        });
 
         // Get current GPS location
         function getCurrentLocation() {
@@ -492,6 +552,44 @@ if (isset($data['error'])) {
                     }
                 );
             });
+        }
+
+        // Check location status
+        async function checkLocation() {
+            const statusDiv = document.getElementById('locationStatus');
+            const messageSpan = document.getElementById('locationMessage');
+            const checkBtn = statusDiv.querySelector('button');
+            
+            statusDiv.className = 'alert alert-info';
+            messageSpan.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Checking your location...';
+            checkBtn.disabled = true;
+            checkBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Checking...';
+            
+            try {
+                const location = await getCurrentLocation();
+                
+                const response = await fetch('attendance.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: `action=check_location&latitude=${location.latitude}&longitude=${location.longitude}`
+                });
+                
+                const result = await response.json();
+                
+                if (result.valid) {
+                    statusDiv.className = 'alert alert-success';
+                    messageSpan.innerHTML = `<i class="bi bi-check-circle me-1"></i>${result.message}`;
+                } else {
+                    statusDiv.className = 'alert alert-danger';
+                    messageSpan.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i>${result.message}`;
+                }
+            } catch (error) {
+                statusDiv.className = 'alert alert-warning';
+                messageSpan.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i>Location check failed. Please try again.`;
+            } finally {
+                checkBtn.disabled = false;
+                checkBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Check Location';
+            }
         }
 
         // Time In function with photo capture
@@ -589,7 +687,7 @@ if (isset($data['error'])) {
                         default:
                             showAlert('danger', 'Failed to get location. Please enable location services and try again.');
                     }
-                } else {
+                    } else {
                     showAlert('danger', 'Failed to record attendance. Please try again.');
                 }
                 
@@ -660,7 +758,7 @@ if (isset($data['error'])) {
                         default:
                             showAlert('danger', 'Failed to get location. Please enable location services and try again.');
                     }
-                } else {
+                    } else {
                     showAlert('danger', 'Failed to record attendance. Please try again.');
                 }
             }
@@ -706,6 +804,29 @@ if (isset($data['error'])) {
                     .catch(error => console.error('Error:', error));
             });
         }
+
+        // Global variable to store the current block type for time out
+        let currentTimeOutBlockType = null;
+
+        // Show time out confirmation modal
+        function showTimeOutConfirmation(blockType) {
+            currentTimeOutBlockType = blockType;
+            const modal = new bootstrap.Modal(document.getElementById('timeOutConfirmModal'));
+            modal.show();
+        }
+
+        // Handle confirmed time out
+        document.getElementById('confirmTimeOutBtn').addEventListener('click', function() {
+            if (currentTimeOutBlockType) {
+                // Hide the confirmation modal
+                const confirmModal = bootstrap.Modal.getInstance(document.getElementById('timeOutConfirmModal'));
+                confirmModal.hide();
+                
+                // Call the original timeOut function
+                timeOut(currentTimeOutBlockType);
+                currentTimeOutBlockType = null;
+            }
+        });
     </script>
 </body>
 </html>

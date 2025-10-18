@@ -41,13 +41,28 @@ body {
 
 /* Main content adjustments */
 main {
-  padding: 1rem;
+  padding: 0.5rem;
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
   align-self: start;
   margin-top: 0;
+  animation: slideDown 0.6s ease-out forwards;
+  transform: translateY(-20px);
+  opacity: 0;
 }
+
+@keyframes slideDown {
+  0% {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
 
 /* Responsive main content adjustments */
 @media (max-width: 768px) {
@@ -161,12 +176,21 @@ main {
 @media (max-width: 800px) {
   body {
     grid-template-columns: 1fr;
+    padding-bottom: 80px; /* Add space for fixed bottom sidebar */
+    margin: 0;
+    overflow-x: hidden;
   }
+  
   main {
-    padding: 2em 1em 60px 1em;
+    padding: 2em 1em 80px 1em; /* Increased bottom padding for sidebar */
+    margin-bottom: 0;
+    z-index: 1;
+    position: relative;
+    min-height: calc(100vh - 80px);
   }
+  
   #sidebar {
-    height: 60px;
+    height: 70px; /* Increased height for better touch targets */
     width: 100%;
     border-right: none;
     border-top: 1px solid var(--line-clr);
@@ -174,56 +198,176 @@ main {
     position: fixed;
     top: unset;
     bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000; /* High z-index to stay on top */
+    background-color: var(--base-clr);
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+    pointer-events: auto;
+    touch-action: manipulation;
 
     > ul {
       padding: 0;
-      display: grid;
-      grid-auto-columns: 60px;
-      grid-auto-flow: column;
+      margin: 0;
+      display: flex;
+      flex-direction: row;
       align-items: center;
-      overflow-x: scroll;
+      justify-content: space-around;
+      height: 100%;
+      overflow-x: auto;
+      overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
     }
+    
     ul li {
       height: 100%;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      position: relative;
+      z-index: 1002;
+      pointer-events: auto;
     }
+    
     ul a,
     ul .dropdown-btn {
       width: 60px;
       height: 60px;
-      padding: 0;
-      border-radius: 0;
+      padding: 12px; /* Increased padding for better icon visibility */
+      border-radius: 8px;
       justify-content: center;
+      align-items: center;
+      display: flex;
+      flex-direction: column;
+      text-align: center;
+      transition: background-color 0.2s ease;
+      position: relative;
+      z-index: 1001;
+      pointer-events: auto;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    
+    /* Make icons larger in mobile */
+    ul a svg,
+    ul .dropdown-btn svg {
+      width: 28px;
+      height: 28px;
+    }
+    
+    ul a:hover,
+    ul .dropdown-btn:hover {
+      background-color: var(--hover-clr);
     }
 
-    ul li span,
-    ul li:first-child,
+    ul li span {
+      display: none; /* Hide text labels in mobile */
+    }
+    
+    ul li:first-child {
+      display: none; /* Hide profile section in mobile */
+    }
+    
     .dropdown-btn svg:last-child {
       display: none;
     }
+    
     ul li .sub-menu.show {
       position: fixed;
-      bottom: 60px;
+      bottom: 70px;
       left: 0;
-      box-sizing: border-box;
-      height: 60px;
-      width: 100%;
-      background-color: var(--hover-clr);
+      right: 0;
+      background: var(--base-clr);
       border-top: 1px solid var(--line-clr);
-      display: flex;
-      justify-content: center;
-
-      > div {
-        overflow-x: auto;
-      }
-      li {
-        display: inline-flex;
-      }
-      a {
-        box-sizing: border-box;
-        padding: 1em;
-        width: auto;
-        justify-content: center;
-      }
+      box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+      z-index: 999;
     }
+    
+    /* Ensure sidebar stays fixed during scroll */
+    #sidebar {
+      transform: translateZ(0); /* Hardware acceleration */
+      -webkit-transform: translateZ(0);
+      will-change: transform;
+    }
+    
+    /* Prevent body scroll when sidebar is open */
+    body.sidebar-open {
+      overflow: hidden;
+    }
+  }
+  
+  /* Additional mobile optimizations */
+  @media (max-width: 480px) {
+    #sidebar {
+      height: 65px;
+    }
+    
+    body {
+      padding-bottom: 65px;
+    }
+    
+    main {
+      padding: 1em 0.5em 65px 0.5em;
+    }
+    
+    #sidebar ul a,
+    #sidebar ul .dropdown-btn {
+      width: 55px;
+      height: 55px;
+      padding: 10px; /* Increased padding for better icon visibility */
+    }
+    
+    /* Make icons larger in small mobile */
+    #sidebar ul a svg,
+    #sidebar ul .dropdown-btn svg {
+      width: 24px;
+      height: 24px;
+    }
+  }
+}
+
+/* Additional mobile sidebar fixes */
+@media (max-width: 800px) {
+  /* Ensure main content doesn't overlap with sidebar */
+  main {
+    position: relative;
+    z-index: 1;
+    margin-bottom: 80px;
+  }
+  
+  /* Fix for iOS Safari */
+  #sidebar {
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+  }
+  
+  /* Prevent touch scrolling issues */
+  #sidebar ul {
+    touch-action: manipulation;
+  }
+  
+  /* Ensure proper spacing for all content */
+  .container, .container-fluid {
+    padding-bottom: 80px;
+    margin-bottom: 80px;
+  }
+  
+  /* Ensure all page content has proper spacing */
+  .page-content, .content, .main-content {
+    padding-bottom: 80px;
+    margin-bottom: 80px;
+  }
+  
+  /* Fix for any overlapping elements */
+  * {
+    box-sizing: border-box;
+  }
+  
+  /* Ensure sidebar is always on top */
+  #sidebar {
+    position: fixed !important;
+    z-index: 9999 !important;
   }
 }

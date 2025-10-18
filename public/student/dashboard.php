@@ -178,6 +178,7 @@ if ($profile) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Student Dashboard - OJT Route</title>
+    <link rel="icon" type="image/png" href="../images/CHMSU.png">
     <link rel="stylesheet" href="../css/style.css">
     <link rel="stylesheet" href="../css/sidebarstyle.css">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -193,6 +194,423 @@ if ($profile) {
         body {
             font-family: 'Poppins', sans-serif;
             background-color: #f8f9fa;
+        }
+        
+        /* Top Banner Section */
+        .top-banner {
+            background: #0ea539;
+            color: white;
+            padding: 2rem 0;
+            position: relative;
+            overflow: hidden;
+            border-radius: 10px;
+        }
+
+        
+        .welcome-message {
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            color: white;
+            margin-left: 1rem;
+        }
+        
+        .student-info {
+            display: flex;
+            gap: 1rem;
+            margin-left: 1rem;
+        }
+        
+        .info-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+         .info-item i {
+             font-size: 1.2rem;
+         }
+         
+         .chmsu-logo {
+             height: 500px;
+             width: auto;
+         }
+         
+         .logo-info {
+             align-items: center;
+             width: 100px;
+             height: 100px;
+             object-fit: contain;
+             display: flex;
+             justify-content: center;
+             align-items: center;
+             margin-right: 1rem;
+             margin-left: 1rem;
+         }
+        
+        /* Main Content Layout */
+        .main-content {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+        
+        /* OJT Progress Section */
+        .ojt-progress-section {
+            margin-bottom: 2rem;
+        }
+        
+        .section-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: #333;
+        }
+        
+         .single-progress-card {
+             padding: 1rem;
+             transition: transform 0.2s;
+         }
+         
+         
+         .progress-header {
+             display: flex;
+             align-items: center;
+             gap: 1rem;
+             margin-bottom: 1.5rem;
+         }
+         
+         .progress-icon {
+             font-size: 2rem;
+             color: var(--chmsu-green);
+         }
+         
+         .progress-title {
+             font-size: 1.2rem;
+             font-weight: 600;
+             color: #333;
+         }
+        
+        .card-icon {
+            font-size: 2rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        
+        .card-number {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--chmsu-green);
+            margin-bottom: 0.5rem;
+        }
+        
+        .card-label {
+            font-size: 0.9rem;
+            color: #666;
+            margin: 0;
+        }
+        
+        /* Progress Bar Styles */
+         .progress-bar-container {
+             width: 100%;
+             height: 12px;
+             background-color: #e9ecef;
+             border-radius: 6px;
+             overflow: hidden;
+             position: relative;
+         }
+        
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--chmsu-green) 0%, var(--chmsu-green-light) 100%);
+            border-radius: 4px;
+            transition: width 1.5s ease-in-out;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .progress-bar-fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%);
+            animation: progressShimmer 2s infinite;
+        }
+        
+        @keyframes progressShimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+        
+        .progress-text {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 0.5rem;
+            font-size: 0.8rem;
+            color: #666;
+        }
+        
+        .progress-percentage {
+            font-weight: 600;
+            color: var(--chmsu-green);
+        }
+        
+        /* Recent Attendance Section */
+        .attendance-section {
+            margin-bottom: 2rem;
+        }
+        
+        .attendance-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1rem;
+        }
+        
+        .attendance-card {
+            background: white;
+            border-radius: 15px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            border-left: 4px solid var(--chmsu-green);
+        }
+        
+        .attendance-card.morning {
+            border-left-color: #ffc107;
+        }
+        
+        .attendance-card.afternoon {
+            border-left-color: #17a2b8;
+        }
+        
+        .attendance-card.overtime {
+            border-left-color: #6f42c1;
+        }
+        
+        .attendance-title {
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: #333;
+        }
+        
+        .attendance-details {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        
+        .attendance-detail {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+        }
+        
+        .attendance-detail i {
+            width: 16px;
+            color: #666;
+        }
+        
+        /* Sidebar Sections */
+        .sidebar-section {
+            margin-bottom: 1rem;
+        }
+        
+        .sidebar-title {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: #333;
+        }
+        
+        .instructor-profiles {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+        
+        .instructor-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.5rem;
+            background: #f8f9fa;
+            border-radius: 8px;
+            transition: background-color 0.2s;
+        }
+        
+        .instructor-item:hover {
+            background: #e9ecef;
+        }
+        
+        .instructor-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--chmsu-green);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+        
+        .instructor-name {
+            font-size: 0.9rem;
+            color: #333;
+            font-weight: 500;
+            flex: 1;
+        }
+        
+        .notices-section {
+            background: white;
+            border-radius: 15px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .notice-item {
+            padding: 1rem 0;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .notice-item:last-child {
+            border-bottom: none;
+        }
+        
+        .notice-title {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 0.5rem;
+        }
+        
+        .notice-description {
+            font-size: 0.9rem;
+            color: #666;
+            margin-bottom: 0.5rem;
+        }
+        
+        .notice-link {
+            color: var(--chmsu-green);
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+        
+        .notice-link:hover {
+            text-decoration: underline;
+        }
+        
+        /* Minimap Section */
+        .minimap-section {
+            background: white;
+            border-radius: 15px;
+            padding: 1.1rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+        
+        .minimap {
+            width: 100%;
+            height: 200px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px dashed #ddd;
+            margin-bottom: 1rem;
+        }
+        
+        .minimap-placeholder {
+            text-align: center;
+            color: #666;
+        }
+        
+        .workplace-info {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        
+        .workplace-detail {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+        }
+        
+        .workplace-detail i {
+            width: 16px;
+            color: var(--chmsu-green);
+        }
+        
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+            
+            .progress-cards {
+                grid-template-columns: 1fr;
+            }
+            
+            .attendance-cards {
+                grid-template-columns: 1fr;
+            }
+            
+            .welcome-message {
+                font-size: 1.8rem;
+            }
+            
+            .student-info {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .top-banner{
+                background: #0ea539;
+                color: white;
+                padding: 1rem;
+                position: relative;
+                overflow: hidden;
+                border-radius: 10px;
+                height: 120px;
+                display: flex;
+                align-items: center;
+            }
+            .top-banner img{
+                position: absolute;
+                right: -50px;
+                top: 50%;
+                transform: translateY(-50%);
+                height: 200px;
+                width: auto;
+                opacity: 0.3;
+                z-index: 1;
+            }
+            .top-banner .container-fluid {
+                position: relative;
+                z-index: 2;
+                width: 100%;
+            }
+            .welcome-message {
+                margin-left: 0;
+                font-size: 1.5rem;
+                font-weight: 700;
+                margin-top: 17rem;
+            }
+            .student-info {
+               display: none !important;
+            }
+
         }
         
         /* Fixed position alert styles */
@@ -221,110 +639,38 @@ if ($profile) {
             from { opacity: 1; }
             to { opacity: 0; }
         }
-        
-        .navbar {
-            background: var(--chmsu-green) !important;
-        }
-        
-        .navbar-brand {
-            font-weight: 600;
-        }
-        
-        .card {
-            border: none;
-            border-radius: 15px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            transition: transform 0.2s;
-        }
-        
-        .card:hover {
-            transform: translateY(-2px);
-        }
-        
-        .stat-card {
-            background: var(--chmsu-green) ;
-            color: white;
-            border-radius: 15px;
-        }
-        
-        .stat-card .card-body {
-            padding: 1.5rem;
-        }
-        
-        .stat-number {
-            font-size: 1.3rem;
-            font-weight: 700;
-            margin: 0;
-        }
-        
-        .stat-label {
-            font-size: 0.9rem;
-            opacity: 0.9;
-            margin: 0;
-            color: white;
-        }
-        
-        .btn-primary {
-            background: var(--chmsu-green);
-            border: none;
-            border-radius: 10px;
-            padding: 0.75rem 1.5rem;
-            font-weight: 600;
-        }
-        
-        .btn-primary:hover {
-            background: var(--chmsu-green-dark);
-        }
-        
-        .progress {
-            height: 12px;
-            border-radius: 6px;
-        }
-        
-        .attendance-block {
-            border-left: 4px solid var(--chmsu-green);
-            padding-left: 1rem;
-        }
-        
-        .attendance-block.morning {
-            border-left-color: #ffc107;
-        }
-        
-        .attendance-block.afternoon {
-            border-left-color: #17a2b8;
-        }
-        
-        .attendance-block.overtime {
-            border-left-color: #6f42c1;
-        }
     </style>
 </head>
 <body>
 <?php include 'student-sidebar.php'; ?>
 <main>
-    
-    <!-- Main Content -->
-    <div class="container-fluid py-4">
-        
-        <!-- Welcome Message -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="card welcome-card">
-                    <div class="card-body">
-                        <h5 class="card-title">
-                            <i class="bi bi-house-door me-2"></i>Welcome back, <?= htmlspecialchars($user->getDisplayName()) ?>!
-                        </h5>
-                        <p class="card-text">
-                            You are in <strong><?= htmlspecialchars($section['section_name'] ?? 'Not assigned') ?></strong>
-                            <?php if ($section): ?>
-                                (<?= htmlspecialchars($section['section_code']) ?>)
-                            <?php endif; ?>
-                        </p>
+    <!-- Top Banner Section -->
+    <div class="top-banner">
+        <div class="container-fluid">
+            <div class="row align-items-center">
+
+                <div class="col-md-10">
+                    <div class="welcome-message">Welcome back, <?= htmlspecialchars($user['full_name'] ?? 'Student') ?>!</div>
+                    <div class="student-info">
+                        <div class="info-item">
+                            <i class="bi bi-person-badge" style="color: white;"></i>
+                            <span style="color: white;">ID: <?= htmlspecialchars($user['school_id'] ?? 'N/A') ?></span>
+                        </div>
+                        <div class="info-item">
+                            <i class="bi bi-people"style="color: white;" ></i>
+                            <span style="color: white;"><?= htmlspecialchars($section['section_name'] ?? 'Not assigned') ?></span>
                     </div>
+                    </div>
+                </div>
+                <div class="logo-info" >
+                        <img src="../images/CHMSU.png" alt="CHMSU Logo" class="chmsu-logo">
+                </div>
+
                 </div>
             </div>
         </div>
         
+    <div class="container-fluid">
         <!-- Forgot Time-Out Notification -->
         <?php if ($missingTimeoutCount > 0): ?>
         <div class="row mb-4">
@@ -334,28 +680,12 @@ if ($profile) {
                         <i class="bi bi-exclamation-triangle-fill fs-4 me-3"></i>
                         <div class="flex-grow-1">
                             <h6 class="alert-heading mb-1">
-                                <i class="bi bi-clock-history me-2"></i>Missing Time-Outs Detected
+                                <i class="bi bi-clock-history me-2"></i>YOU HAVE MISSING TIME-OUTS
                             </h6>
                             <p class="mb-2">
                                 You have <strong><?= $missingTimeoutCount ?></strong> attendance record(s) with missing time-outs. 
-                                Submit a forgot time-out request to get approval for these hours.
+                                Submit a request for approval for these hours.
                             </p>
-                            <div class="mb-2">
-                                <strong>Missing Time-Outs:</strong>
-                                <ul class="mb-0 mt-1">
-                                    <?php foreach ($missingTimeouts as $timeout): ?>
-                                    <li>
-                                        <?php 
-                                        $timeoutDate = DateTime::createFromFormat('Y-m-d', $timeout['date']);
-                                        $timeoutTimeIn = DateTime::createFromFormat('Y-m-d H:i:s', $timeout['time_in']);
-                                        echo $timeoutDate ? $timeoutDate->format('M j, Y') : $timeout['date'];
-                                        ?> - 
-                                        <?= ucfirst($timeout['block_type']) ?> Block
-                                        (Time-in: <?= $timeoutTimeIn ? $timeoutTimeIn->format('g:i A') : $timeout['time_in'] ?>)
-                                    </li>
-                                    <?php endforeach; ?>
-                                </ul>
-                            </div>
                             <a href="forgot_timeout.php" class="btn btn-warning btn-sm">
                                 <i class="bi bi-clock-history me-1"></i>Submit Request
                             </a>
@@ -368,175 +698,154 @@ if ($profile) {
         </div>
         <?php endif; ?>
         
-        <!-- Summary Cards -->
-        <div class="row mb-4">
-            <div class="col-md-4">
-                <div class="card stat-card">
-                    <div class="card-body text-center">
-                        <h3 class="stat-number"><?= number_format($totalHours, 0) ?> / <?= $requiredHours ?></h3>
-                        <p class="stat-label">Total OJT Hours</p>
-                        <div class="progress mt-2" style="height: 8px;">
-                            <div class="progress-bar bg-success" style="width: <?= $hoursProgress ?>%"></div>
+        <!-- Main Content Layout -->
+        <div class="main-content">
+            <!-- Left Column - Main Content -->
+            <div class="left-column">
+                <!-- OJT Progress Section -->
+                <div class="ojt-progress-section " >
+                    <div class="single-progress-card">
+                        <div class="progress-header">
+                            <div class="progress-icon">
+                                <div class="progress-title">OJT Hours Progress</div>
                         </div>
+
                     </div>
+                        <div class="progress-container">
+                            <div class="progress-bar-container">
+                                <div class="progress-bar-fill" style="width: <?= $progressPercentage ?>%"></div>
                 </div>
-            </div>
-            <div class="col-md-4">
-                <div class="card stat-card">
-                    <div class="card-body text-center">
-                        <h3 class="stat-number"><?= $documentStats['approved_documents'] ?> / 7</h3>
-                        <p class="stat-label">Document Compliance</p>
-                        <div class="progress mt-2" style="height: 8px;">
-                            <div class="progress-bar <?= $documentStats['approved_documents'] >= 7 ? 'bg-success' : 'bg-warning' ?>" 
-                                 style="width: <?= ($documentStats['approved_documents'] / 7) * 100 ?>%"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="card stat-card" >
-                    <div class="card-body text-center">
-                        <h3 class="stat-number">
-                            <?php if ($lastTimeIn): ?>
-                                <?= date('M j, g:i A', strtotime($lastTimeIn['time_in'])) ?>
-                            <?php else: ?>
-                                No attendance
-                            <?php endif; ?>
-                        </h3>
-                        <p class="stat-label" style="font-size:14px;">Recent Attendance</p>
-                        <?php if ($lastTimeIn): ?>
-                            <small class="text-white-50"><?= ucfirst($lastTimeIn['block_type']) ?> block</small>
-                        <?php endif; ?>
+                            <div class="progress-text">
+                                <span><?= number_format($totalHours, 0) ?>/600 hours</span>
+                                <span class="progress-percentage"><?= number_format($progressPercentage, 1) ?>% progress</span>
                     </div>
                 </div>
             </div>
         </div>
         
-        <!-- Status -->
-        <div class="row mb-4">
-           
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">
-                            <i class="bi bi-person-check me-2"></i>Status
-                        </h5>
-                        <div class="d-flex align-items-center">
-                            <span class="badge bg-<?= $statusClass ?> me-3" style="font-size: 1rem;">
-                                <?= ucfirst(str_replace('_', ' ', $status)) ?>
-                            </span>
-                            <div>
-                                <p class="mb-1">Workplace: <strong><?= htmlspecialchars($profile['workplace_name'] ?? 'Not set') ?></strong></p>
-                                <p class="mb-0">Supervisor: <strong><?= htmlspecialchars($profile['supervisor_name'] ?? 'Not set') ?></strong></p>
-                            </div>
-                        </div>
+                <!-- Recent Attendance Section -->
+                <div class="attendance-section">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h2 class="section-title mb-0">Recent Attendance</h2>
                     </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Today's Attendance -->
-        <div class="row mb-4">
+                    <div class="attendance-cards">
+                        <?php if (empty($recentAttendance)): ?>
             <div class="col-12">
-                <div class="card">
-                    <div class="card-header">
-                        <h5 class="mb-0">
-                            <i class="bi bi-clock me-2"></i>Today's Attendance
-                        </h5>
+                            <div class="text-center py-4">
+                                <i class="bi bi-calendar-x text-muted" style="font-size: 3rem;"></i>
+                                <p class="text-muted mt-2">No recent attendance records</p>
                     </div>
-                    <div class="card-body">
-                        <?php if (empty($todayAttendance)): ?>
-                        <div class="text-center py-4">
-                            <i class="bi bi-clock text-muted" style="font-size: 3rem;"></i>
-                            <p class="text-muted mt-2">No attendance records for today</p>
-                            <a href="attendance.php" class="btn btn-primary">
-                                <i class="bi bi-plus me-1"></i>Start Attendance
-                            </a>
                         </div>
                         <?php else: ?>
-                        <div class="row">
-                            <?php foreach ($todayAttendance as $attendance): ?>
-                            <div class="col-md-4 mb-3">
-                                <div class="attendance-block attendance-<?= $attendance['block_type'] ?>">
-                                    <h6 class="text-uppercase fw-bold">
+                        <?php foreach (array_slice($recentAttendance, 0, 3) as $attendance): ?>
+                        <div class="attendance-card attendance-<?= $attendance['block_type'] ?>">
+                            <div class="attendance-title">
                                         <?= ucfirst($attendance['block_type']) ?> Block
-                                    </h6>
-                                    <p class="mb-1">
-                                        <i class="bi bi-arrow-right-circle me-1"></i>
-                                        Time In: <strong><?= $attendance['time_in'] ? date('H:i', strtotime($attendance['time_in'])) : 'Not started' ?></strong>
-                                    </p>
-                                    <p class="mb-1">
-                                        <i class="bi bi-arrow-left-circle me-1"></i>
-                                        Time Out: <strong><?= $attendance['time_out'] ? date('H:i', strtotime($attendance['time_out'])) : 'Not completed' ?></strong>
-                                    </p>
-                                    <p class="mb-0">
-                                        <i class="bi bi-clock-history me-1"></i>
-                                        Hours: <strong><?= number_format($attendance['hours_earned'], 1) ?></strong>
-                                    </p>
+                            </div>
+                            <div class="attendance-details">
+                                <div class="attendance-detail">
+                                    <i class="bi bi-calendar-date"></i>
+                                    <span><?= date('M d, Y', strtotime($attendance['date'])) ?></span>
+                                </div>
+                                <div class="attendance-detail">
+                                    <i class="bi bi-arrow-right-circle"></i>
+                                    <span>Time In: <?= $attendance['time_in'] ? date('g:i A', strtotime($attendance['time_in'])) : 'Not started' ?></span>
+                                </div>
+                                <div class="attendance-detail">
+                                    <i class="bi bi-arrow-left-circle"></i>
+                                    <span>Time Out: <?= $attendance['time_out'] ? date('g:i A', strtotime($attendance['time_out'])) : 'Not completed' ?></span>
+                                </div>
+                                <div class="attendance-detail">
+                                    <i class="bi bi-clock-history"></i>
+                                    <span>Hours: <strong><?= number_format($attendance['hours_earned'], 1) ?></strong></span>
+                                </div>
                                 </div>
                             </div>
                             <?php endforeach; ?>
-                        </div>
-
                         <?php endif; ?>
                     </div>
                 </div>
             </div>
-        </div>
-        
-    
-        </div>
-        
-        <!-- Recent Attendance -->
-        <div class="row">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header">
-                        <h5 class="mb-0">
-                            <i class="bi bi-calendar-week me-2"></i>Recent Attendance (Last 7 Days)
-                        </h5>
-                    </div>
-                    <div class="card-body">
-                        <?php if (empty($recentAttendance)): ?>
-                        <div class="text-center py-4">
-                            <i class="bi bi-calendar-x text-muted" style="font-size: 3rem;"></i>
-                            <p class="text-muted mt-2">No recent attendance records</p>
+
+            <!-- Right Column - Sidebar -->
+            <div class="right-column">
+                <!-- Minimap Section -->
+                <div class="sidebar-section">
+                    <h3 class="sidebar-title">OJT Location</h3>
+                    <div class="minimap-section">
+                        <div class="minimap">
+                            <?php if ($profile['workplace_latitude'] && $profile['workplace_longitude']): ?>
+                            <!-- Real Map with coordinates -->
+                            <div id="workplace-map" style="width: 100%; height: 200px; border-radius: 10px;"></div>
+                            <script>
+                                // Initialize map when coordinates are available
+                                function initWorkplaceMap() {
+                                    const lat = <?= $profile['workplace_latitude'] ?>;
+                                    const lng = <?= $profile['workplace_longitude'] ?>;
+                                    const workplaceName = '<?= addslashes($profile['workplace_name'] ?? 'Workplace') ?>';
+                                    
+                                    // Create map using Leaflet (lightweight map library)
+                                    const map = L.map('workplace-map').setView([lat, lng], 15);
+                                    
+                                    // Add OpenStreetMap tiles
+                                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                                        attribution: '© OpenStreetMap contributors'
+                                    }).addTo(map);
+                                    
+                                    // Add marker for workplace
+                                    L.marker([lat, lng])
+                                        .addTo(map)
+                                        .bindPopup('<strong>' + workplaceName + '</strong><br>OJT Workplace Location')
+                                        .openPopup();
+                                }
+                                
+                                // Load Leaflet CSS and JS
+                                const link = document.createElement('link');
+                                link.rel = 'stylesheet';
+                                link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+                                document.head.appendChild(link);
+                                
+                                const script = document.createElement('script');
+                                script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+                                script.onload = initWorkplaceMap;
+                                document.head.appendChild(script);
+                            </script>
+                            <?php else: ?>
+                            <!-- Fallback placeholder when no coordinates -->
+                            <div class="minimap-placeholder">
+                                <i class="bi bi-geo-alt" style="font-size: 2rem; margin-bottom: 0.5rem;"></i>
+                                <div>Map View</div>
+                                <small>Location: <?= htmlspecialchars($profile['workplace_name'] ?? 'Not assigned') ?></small>
+                                <br><small class="text-muted">No coordinates available</small>
+                            </div>
+                            <?php endif; ?>
                         </div>
-                        <?php else: ?>
-                        <div class="table-responsive">
-                            <table class="table table-hover">
-                                <thead>
-                                    <tr>
-                                        <th>Date</th>
-                                        <th>Block</th>
-                                        <th>Time In</th>
-                                        <th>Time Out</th>
-                                        <th>Hours</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php foreach ($recentAttendance as $attendance): ?>
-                                    <tr>
-                                        <td><?= date('M d, Y', strtotime($attendance['date'])) ?></td>
-                                        <td>
-                                            <span class="badge bg-<?= $attendance['block_type'] === 'morning' ? 'warning' : ($attendance['block_type'] === 'afternoon' ? 'info' : 'info') ?>">
-                                                <?= ucfirst($attendance['block_type']) ?>
-                                            </span>
-                                        </td>
-                                        <td><?= $attendance['time_in'] ? date('g:i A', strtotime($attendance['time_in'])) : '-' ?></td>
-                                        <td><?= $attendance['time_out'] ? date('g:i A', strtotime($attendance['time_out'])) : '-' ?></td>
-                                        <td><strong><?= number_format($attendance['hours_earned'], 1) ?></strong></td>
-                                    </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
+                        <div class="workplace-info">
+                            <div class="workplace-detail">
+                                <i class="bi bi-building"></i>
+                                <span><strong><?= htmlspecialchars($profile['workplace_name'] ?? 'Not assigned') ?></strong></span>
+                            </div>
+                            <div class="workplace-detail">
+                                <i class="bi bi-person-badge"></i>
+                                <span>Supervisor: <?= htmlspecialchars($profile['supervisor_name'] ?? 'Not assigned') ?></span>
+                            </div>
+                            <div class="workplace-detail">
+                                <i class="bi bi-briefcase"></i>
+                                <span>Position: <?= htmlspecialchars($profile['student_position'] ?? 'Not assigned') ?></span>
+                            </div>
+                            <?php if ($profile['workplace_latitude'] && $profile['workplace_longitude']): ?>
+                            <div class="workplace-detail">
+                                <i class="bi bi-geo-alt"></i>
+                                <span>Coordinates: <?= number_format($profile['workplace_latitude'], 6) ?>, <?= number_format($profile['workplace_longitude'], 6) ?></span>
+                            </div>
+                            <?php endif; ?>
                         </div>
-                        <?php endif; ?>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-    
+    </div>
     
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
@@ -546,8 +855,6 @@ if ($profile) {
             setTimeout(() => alertElement.remove(), 300);
         }
     </script>
-                                    
 </main>
 </body>
 </html>
-

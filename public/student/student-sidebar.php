@@ -1,10 +1,45 @@
 <nav id="sidebar">
     <ul>
       <li>
-        <span class="logo">OJT ROUTE</span>
-        <button onclick=toggleSidebar() id="toggle-btn">
-          <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#e8eaed"><path d="m313-480 155 156q11 11 11.5 27.5T468-268q-11 11-28 11t-28-11L228-452q-6-6-8.5-13t-2.5-15q0-8 2.5-15t8.5-13l184-184q11-11 27.5-11.5T468-692q11 11 11 28t-11 28L313-480Zm264 0 155 156q11 11 11.5 27.5T732-268q-11 11-28 11t-28-11L492-452q-6-6-8.5-13t-2.5-15q0-8 2.5-15t8.5-13l184-184q11-11 27.5-11.5T732-692q11 11 11 28t-11 28L577-480Z"/></svg>
-        </button>
+<?php
+// Get user profile picture and name
+$profilePicture = '../assets/images/default-avatar.svg'; // Default avatar
+$userName = 'Student';
+
+if (isset($_SESSION['user_id'])) {
+    try {
+        require_once '../../vendor/autoload.php';
+        $pdo = App\Utils\Database::getInstance();
+        $fileUploadService = new App\Services\FileUploadService();
+        
+        $stmt = $pdo->prepare("SELECT profile_picture, full_name, school_id FROM users WHERE id = ?");
+        $stmt->execute([$_SESSION['user_id']]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($user) {
+            $userName = $user['full_name'] ?? $user['school_id'] ?? 'Student';
+            // Use the same method as profile.php
+            $profilePicture = $fileUploadService->getProfilePictureUrl($user['profile_picture'] ?? null);
+        } else {
+            // Fallback to session data if database query fails
+            $userName = $_SESSION['full_name'] ?? $_SESSION['school_id'] ?? 'Student';
+            $profilePicture = $fileUploadService->getProfilePictureUrl($_SESSION['profile_picture'] ?? null);
+        }
+    } catch (Exception $e) {
+        // Use session data as fallback if there's an error
+        $userName = $_SESSION['full_name'] ?? $_SESSION['school_id'] ?? 'Student';
+        try {
+            $fileUploadService = new App\Services\FileUploadService();
+            $profilePicture = $fileUploadService->getProfilePictureUrl($_SESSION['profile_picture'] ?? null);
+        } catch (Exception $e2) {
+            // Keep default avatar if all else fails
+            error_log("Error loading user data in sidebar: " . $e->getMessage());
+        }
+    }
+}
+        ?>
+        <img src="<?= $profilePicture ?>" alt="Profile" class="sidebar-profile-pic">
+        <small class="logo" style="margin-right: 90px;"><?= htmlspecialchars($userName) ?></small>
       </li>
       <li>
         <a href="dashboard.php">
@@ -66,6 +101,12 @@
         <span>Profile</span>
         </a>
       </li>
+      <li>
+        <a href="../logout.php">
+        <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#e3e3e3"><path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h280v80H200v560h280v80H200Zm440-160-55-58 102-102H360v-80h327L585-622l55-58 200 200-200 200Z"/></svg>
+        <span>Logout</span>
+        </a>
+      </li>
     </ul>
 
   </nav>
@@ -105,6 +146,28 @@
         0% { transform: scale(1); }
         50% { transform: scale(1.1); }
         100% { transform: scale(1); }
+    }
+    
+    /* Sidebar Profile Picture */
+    .sidebar-profile-pic {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 3px solid rgba(255, 255, 255, 0.3);
+        margin-top: 20px;
+        display: block;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    }
+    
+    .logo {
+        color: #e3e3e3;
+        font-size: 14px;
+        font-weight: 600;
+        text-align: center;
+        display: block;
+        margin-bottom: 15px;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
     }
   </style>
 

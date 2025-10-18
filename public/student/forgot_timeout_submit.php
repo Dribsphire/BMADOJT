@@ -63,6 +63,15 @@ if (isset($_GET['action'])) {
             }
             break;
             
+        case 'preview_letter':
+            if (isset($_GET['id'])) {
+                $controller->previewLetter((int) $_GET['id']);
+            } else {
+                http_response_code(400);
+                echo json_encode(['error' => 'Request ID required']);
+            }
+            break;
+            
         default:
             http_response_code(400);
             echo json_encode(['error' => 'Invalid action']);

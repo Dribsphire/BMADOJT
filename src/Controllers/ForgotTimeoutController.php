@@ -276,6 +276,71 @@ class ForgotTimeoutController
     }
 
     /**
+     * Preview letter file
+     */
+    public function previewLetter(int $requestId): void
+    {
+        try {
+            $authMiddleware = new AuthMiddleware();
+            $user = $authMiddleware->getCurrentUser();
+            
+            if (!$user || $user->role !== 'student') {
+                $this->sendJsonResponse(['error' => 'Unauthorized'], 401);
+                return;
+            }
+
+            $requests = $this->forgotTimeoutService->getStudentRequests($user->id);
+            $request = null;
+            
+            foreach ($requests as $req) {
+                if ($req['id'] == $requestId) {
+                    $request = $req;
+                    break;
+                }
+            }
+            
+            if (!$request) {
+                $this->sendJsonResponse(['error' => 'Request not found'], 404);
+                return;
+            }
+
+            $filePath = __DIR__ . '/../../' . $request['letter_file_path'];
+            
+            if (!file_exists($filePath)) {
+                $this->sendJsonResponse(['error' => 'File not found'], 404);
+                return;
+            }
+
+            // Get file extension
+            $extension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+            
+            // Set appropriate headers for file preview
+            if ($extension === 'pdf') {
+                header('Content-Type: application/pdf');
+                header('Content-Disposition: inline; filename="' . basename($filePath) . '"');
+                header('Cache-Control: public, max-age=3600');
+            } else {
+                // For non-PDF files, show a message
+                echo '<div style="padding: 20px; text-align: center; font-family: Arial, sans-serif;">';
+                echo '<h4>Document Preview</h4>';
+                echo '<p>This document type cannot be previewed in the browser.</p>';
+                echo '<p><strong>File:</strong> ' . basename($filePath) . '</p>';
+                echo '<p><strong>Type:</strong> ' . strtoupper($extension) . '</p>';
+                echo '<p>Please download the file to view its contents.</p>';
+                echo '</div>';
+                exit;
+            }
+            
+            readfile($filePath);
+            exit;
+            
+        } catch (Exception $e) {
+            error_log("ForgotTimeoutController::previewLetter error: " . $e->getMessage());
+            $this->sendJsonResponse(['error' => 'Failed to preview file'], 500);
+        }
+    }
+
+    /**
      * Send JSON response
      */
     private function sendJsonResponse(array $data, int $statusCode = 200): void

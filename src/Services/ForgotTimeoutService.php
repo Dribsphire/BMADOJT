@@ -152,6 +152,7 @@ class ForgotTimeoutService
             $stmt = $this->pdo->prepare("
                 SELECT 
                     ftr.id,
+                    ftr.attendance_record_id,
                     ftr.request_date,
                     ftr.block_type,
                     ftr.letter_file_path,
