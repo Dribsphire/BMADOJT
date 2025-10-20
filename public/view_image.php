@@ -14,7 +14,7 @@ if (empty($filename) || !preg_match('/^[a-zA-Z0-9_\-\.]+$/', $filename)) {
 }
 
 // Construct the full file path (absolute path from project root)
-$filePath = __DIR__ . '/uploads/profiles/' . $filename;
+$filePath = __DIR__ . '/../uploads/profiles/' . $filename;
 
 // Check if file exists
 if (!file_exists($filePath)) {

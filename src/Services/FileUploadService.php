@@ -73,17 +73,19 @@ class FileUploadService
             
             error_log("File created successfully: $filepath");
             
-            // Update user profile picture in database
+            // Update user profile picture in database with full path
+            $profilePicturePath = 'uploads/profiles/' . $filename;
             $stmt = $this->pdo->prepare("UPDATE users SET profile_picture = ? WHERE id = ?");
-            $stmt->execute([$filename, $userId]);
+            $stmt->execute([$profilePicturePath, $userId]);
             
-            error_log("Database updated with filename: $filename");
+            error_log("Database updated with full path: $profilePicturePath");
             
             return [
                 'success' => true,
                 'message' => 'Profile picture uploaded successfully',
                 'filename' => $filename,
-                'filepath' => $filepath
+                'filepath' => $filepath,
+                'profile_picture_path' => $profilePicturePath
             ];
             
         } catch (Exception $e) {
@@ -246,8 +248,9 @@ class FileUploadService
             $user = $stmt->fetch(PDO::FETCH_ASSOC);
             
             if ($user && $user['profile_picture']) {
-                // Delete file from filesystem
-                $filepath = $this->uploadPath . $user['profile_picture'];
+                // Extract filename from full path if needed
+                $filename = basename($user['profile_picture']);
+                $filepath = $this->uploadPath . $filename;
                 if (file_exists($filepath)) {
                     unlink($filepath);
                 }
@@ -273,10 +276,24 @@ class FileUploadService
     /**
      * Get profile picture URL
      */
-    public function getProfilePictureUrl(?string $filename): string
+    public function getProfilePictureUrl(?string $profilePicturePath): string
     {
-        if (!$filename || !file_exists($this->uploadPath . $filename)) {
+        if (!$profilePicturePath) {
             // Return default avatar with relative path
+            return '../assets/images/default-avatar.svg';
+        }
+        
+        // Check if it's already a full path or just filename
+        if (strpos($profilePicturePath, 'uploads/profiles/') === 0) {
+            // It's a full path like 'uploads/profiles/profile_4_1760828704.png'
+            $filename = basename($profilePicturePath);
+        } else {
+            // It's just a filename like 'profile_4_1760828704.png'
+            $filename = $profilePicturePath;
+        }
+        
+        // Check if file exists
+        if (!file_exists($this->uploadPath . $filename)) {
             return '../assets/images/default-avatar.svg';
         }
         
