@@ -45,8 +45,8 @@ class AttendanceService
                 'color' => 'warning',
                 'icon' => 'sun'
             ],
-            'evening' => [
-                'name' => 'Evening Block',
+            'overtime' => [
+                'name' => 'Overtime Block',
                 'start_time' => '18:00:00',
                 'end_time' => '00:00:00',
                 'color' => 'info',
@@ -122,8 +122,8 @@ class AttendanceService
             $startHour = (int)substr($block['start_time'], 0, 2);
             $endHour = (int)substr($block['end_time'], 0, 2);
             
-            // Handle evening block (crosses midnight)
-            if ($blockKey === 'evening') {
+            // Handle overtime block (crosses midnight)
+            if ($blockKey === 'overtime') {
                 $endHour = 24;
             }
             
@@ -217,7 +217,7 @@ class AttendanceService
      * Record student time-in for a specific block
      * 
      * @param int $studentId Student ID
-     * @param string $blockType Block type (morning, afternoon, evening)
+     * @param string $blockType Block type (morning, afternoon, overtime)
      * @param float $latitude GPS latitude
      * @param float $longitude GPS longitude
      * @param string|null $photoData Base64 photo data (optional)
@@ -324,7 +324,7 @@ class AttendanceService
      * Record student time-out for a specific block
      * 
      * @param int $studentId Student ID
-     * @param string $blockType Block type (morning, afternoon, evening)
+     * @param string $blockType Block type (morning, afternoon, overtime)
      * @param float $latitude GPS latitude
      * @param float $longitude GPS longitude
      * @return array Result with success status and message
@@ -470,8 +470,8 @@ class AttendanceService
             $startHour = (int)substr($blockInfo['start_time'], 0, 2);
             $endHour = (int)substr($blockInfo['end_time'], 0, 2);
             
-            // Handle evening block (crosses midnight)
-            if ($blockKey === 'evening') {
+            // Handle overtime block (crosses midnight)
+            if ($blockKey === 'overtime') {
                 $endHour = 24;
             }
             

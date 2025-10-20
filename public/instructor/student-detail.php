@@ -53,6 +53,8 @@ $stmt = $pdo->prepare("
 $stmt->execute([$student_id, $user->section_id]);
 $student = $stmt->fetch();
 
+
+
 if (!$student) {
     $_SESSION['error'] = 'Student not found or not in your section.';
     header('Location: student-list.php');
@@ -147,6 +149,9 @@ $activity_logs = $stmt->fetchAll();
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
     <!-- Leaflet.js CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- FullCalendar CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.css" rel="stylesheet">
     <style>
         :root {
             --chmsu-green: #0ea539;
@@ -176,13 +181,6 @@ $activity_logs = $stmt->fetchAll();
             padding: 2rem;
             margin-bottom: 2rem;
         }
-        .stats-card {
-            background: white;
-            border-radius: 0.2rem;
-            padding: 1.5rem;
-            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
-            border-left: 4px solid #0ea539;
-        }
         .info-card {
             background: white;
             border-radius: 0.5rem;
@@ -198,6 +196,67 @@ $activity_logs = $stmt->fetchAll();
             flex-grow: 1;
         }
         
+        .total-hours-display {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: linear-gradient(135deg, #0ea539, #0d8a2f);
+            color: white;
+            padding: 1rem 1.5rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 8px rgba(14, 165, 57, 0.3);
+        }
+        
+        .hours-number {
+            font-size: 2rem;
+            font-weight: bold;
+            line-height: 1;
+        }
+        
+        .hours-label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+            margin-top: 0.2rem;
+        }
+        
+        .progress-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .student-avatar {
+            flex-shrink: 0;
+        }
+        
+        .profile-image {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 3px solid #0ea539;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+        }
+        
+        .student-info {
+            flex-grow: 1;
+        }
+        
+        .student-name {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 0.2rem;
+        }
+        
+        .student-id {
+            font-size: 0.9rem;
+            color: #666;
+            display: flex;
+            align-items: center;
+        }
+        
         /* Ensure equal height for side-by-side cards */
         .row .col-md-6 {
             display: flex;
@@ -205,6 +264,64 @@ $activity_logs = $stmt->fetchAll();
         
         .row .col-md-6 .info-card {
             width: 100%;
+        }
+        
+        /* Calendar Customization */
+        .fc {
+            font-family: inherit;
+        }
+        .fc-event {
+            border-radius: 4px;
+            border: none;
+            font-size: 0.7rem;
+            padding: 1px 3px;
+        }
+        .fc-event-title {
+            font-weight: 500;
+        }
+        
+        /* Make calendar days clickable */
+        .fc-daygrid-day {
+            cursor: pointer;
+        }
+        .fc-daygrid-day:hover {
+            background-color: rgba(14, 165, 57, 0.1);
+        }
+        
+        /* Status Colors */
+        .event-completed {
+            background-color: #28a745 !important;
+            color: white !important;
+        }
+        .event-incomplete {
+            background-color: #ffc107 !important;
+            color: #212529 !important;
+        }
+        .event-missed {
+            background-color: #dc3545 !important;
+            color: white !important;
+        }
+        .event-pending {
+            background-color: #0ea539 !important;
+            color: white !important;
+        }
+        
+        .calendar-container {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 15px;
+        }
+        
+        .calendar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .status-legend {
+            font-size: 0.75rem;
         }
     </style>
 </head>
@@ -222,49 +339,7 @@ $activity_logs = $stmt->fetchAll();
                 </div>
             </div>
 
-            <div class="profile-header">
-                    <h4 class="mb-2"><?= htmlspecialchars($student['full_name']) ?></h4>
-                            <i class="bi bi-person-badge me-2" style="color:white;"></i>
-                            <?= htmlspecialchars($student['school_id']) ?>
-                            
-            </div>
 
-            <!-- Statistics Cards -->
-            <div class="row mb-3">
-                <div class="col-md-4">
-                    <div class="stats-card">
-                        <div class="d-flex align-items-center">
-                            <div class="flex-grow-1">
-                                <h3 class="mb-1 text-primary"><?= number_format($attendance_summary['total_hours'], 1) ?></h3>
-                                <p class="mb-0 text-muted">Total Hours</p>
-                            </div>
-                            <i class="bi bi-clock-fill fs-1 text-primary opacity-50"></i>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="stats-card">
-                        <div class="d-flex align-items-center">
-                            <div class="flex-grow-1">
-                                <h3 class="mb-1 text-success"><?= $attendance_summary['completed_records'] ?></h3>
-                                <p class="mb-0 text-muted">Completed Sessions</p>
-                            </div>
-                            <i class="bi bi-check-circle-fill fs-1 text-success opacity-50"></i>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="stats-card">
-                        <div class="d-flex align-items-center">
-                            <div class="flex-grow-1">
-                                <h3 class="mb-1 text-info"><?= count($document_submissions) ?></h3>
-                                <p class="mb-0 text-muted">Documents</p>
-                            </div>
-                            <i class="bi bi-file-text-fill fs-1 text-info opacity-50"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
 
             <div class="row">
                 <!-- Student Information -->
@@ -274,11 +349,37 @@ $activity_logs = $stmt->fetchAll();
                             <i class="bi bi-person-lines-fill me-2"></i>Student Information
                         </h5>
                         <div class="row">
-                            <div class="col-sm-4"><strong>School ID:</strong></div>
-                            <div class="col-sm-8"><?= htmlspecialchars($student['school_id']) ?></div>
-                            
-                            <div class="col-sm-4"><strong>Full Name:</strong></div>
-                            <div class="col-sm-8"><?= htmlspecialchars($student['full_name']) ?></div>
+                            <div class="col-sm-4"><strong>Student:</strong></div>
+                            <div class="col-sm-8">
+                                <div class="d-flex align-items-center gap-3">
+                                    <div class="student-avatar">
+                                        <?php 
+                                        // Check if profile_picture exists and is not empty
+                                        $hasProfilePic = !empty($student['profile_picture']) && $student['profile_picture'] !== null;
+                                        
+                                        // Use absolute path for file existence check
+                                        $absoluteProfilePath = $hasProfilePic ? __DIR__ . '/../../uploads/profiles/' . $student['profile_picture'] : '';
+                                        $profilePicPath = $hasProfilePic ? '../../uploads/profiles/' . $student['profile_picture'] : '';
+                                        $defaultPicPath = '../assets/images/default-avatar.svg';
+                                        
+                                        // Check file existence using absolute path, but use relative path for display
+                                        $fullPath = ($hasProfilePic && file_exists($absoluteProfilePath)) ? $profilePicPath : $defaultPicPath;
+                                        
+                                        ?>
+                                        <img src="<?= htmlspecialchars($fullPath) ?>" 
+                                             alt="Student Profile" 
+                                             class="profile-image"
+                                             onerror="this.src='<?= htmlspecialchars($defaultPicPath) ?>'">
+                                    </div>
+                                    <div class="student-info">
+                                        <div class="student-name"><?= htmlspecialchars($student['full_name']) ?></div>
+                                        <div class="student-id">
+                                            <i class="bi bi-person-badge me-1"></i>
+                                            <?= htmlspecialchars($student['school_id']) ?>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                             
                             <div class="col-sm-4"><strong>Email:</strong></div>
                             <div class="col-sm-8"><?= htmlspecialchars($student['email']) ?></div>
@@ -288,6 +389,27 @@ $activity_logs = $stmt->fetchAll();
                             
                             <div class="col-sm-4"><strong>Section:</strong></div>
                             <div class="col-sm-8"><?= htmlspecialchars($student['section_name']) ?> (<?= htmlspecialchars($student['section_code']) ?>)</div>
+                            
+                            <div class="col-sm-4"><strong>Total Hours:</strong></div>
+                            <div class="col-sm-8">
+                                <div class="d-flex align-items-center gap-3">
+                                    <div class="total-hours-display">
+                                        <span class="hours-number"><?= number_format($attendance_summary['total_hours'], 1) ?></span>
+                                        <span class="hours-label">hours</span>
+                                    </div>
+                                    <div class="progress-container">
+                                        <div class="progress" style="width: 200px; height: 8px;">
+                                            <div class="progress-bar bg-primary" role="progressbar" 
+                                                 style="width: <?= min(100, ($attendance_summary['total_hours'] / 600) * 100) ?>%"
+                                                 aria-valuenow="<?= $attendance_summary['total_hours'] ?>" 
+                                                 aria-valuemin="0" 
+                                                 aria-valuemax="600">
+                                            </div>
+                                        </div>
+                                        <small class="text-muted"><?= number_format($attendance_summary['total_hours'], 1) ?>/600 hours</small>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -334,47 +456,54 @@ $activity_logs = $stmt->fetchAll();
                 </div>
             </div>
 
-            <!-- Recent Attendance -->
+            <!-- Attendance Calendar -->
             <div class="row mb-4" id="attendance">
                 <div class="col-12">
                     <div class="info-card">
                         <h5 class="mb-3">
-                            <i class="bi bi-calendar-check me-2"></i>Recent Attendance Records
+                            <i class="bi bi-calendar-check me-2"></i>Attendance Calendar
                         </h5>
-                        <?php if (empty($attendance_records)): ?>
-                            <p class="text-muted">No attendance records found.</p>
-                        <?php else: ?>
-                            <div class="table-responsive">
-                                <table class="table table-sm">
-                                    <thead>
-                                        <tr>
-                                            <th>Date</th>
-                                            <th>Block</th>
-                                            <th>Time In</th>
-                                            <th>Time Out</th>
-                                            <th>Hours</th>
-                                            <th>Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <?php foreach ($attendance_records as $record): ?>
-                                            <tr>
-                                                <td><?= date('M j, Y', strtotime($record['attendance_date'])) ?></td>
-                                                <td><?= ucfirst($record['block_type']) ?></td>
-                                                <td><?= $record['time_in'] ? date('g:i A', strtotime($record['time_in'])) : '-' ?></td>
-                                                <td><?= $record['time_out'] ? date('g:i A', strtotime($record['time_out'])) : '-' ?></td>
-                                                <td><?= number_format($record['hours_earned'], 1) ?></td>
-                                                <td>
-                                                    <span class="badge status-badge status-<?= $record['status'] ?>">
-                                                        <?= ucfirst(str_replace('_', ' ', $record['status'])) ?>
-                                                    </span>
-                                                </td>
-                                            </tr>
-                                        <?php endforeach; ?>
-                                    </tbody>
-                                </table>
+                        
+                        <!-- Status Legend -->
+                        <div class="row mb-3">
+                            <div class="col-12">
+                                <div class="card border-0 bg-light">
+                                    <div class="card-body py-2">
+                                        <div class="row g-2">
+                                            <div class="col-6 col-md-3">
+                                                <div class="d-flex align-items-center">
+                                                    <div class="event-completed me-2" style="width: 12px; height: 12px; border-radius: 2px;"></div>
+                                                    <small class="text-muted">Completed</small>
+                                                </div>
+                                            </div>
+                                            <div class="col-6 col-md-3">
+                                                <div class="d-flex align-items-center">
+                                                    <div class="event-incomplete me-2" style="width: 12px; height: 12px; border-radius: 2px;"></div>
+                                                    <small class="text-muted">Time-in Only</small>
+                                                </div>
+                                            </div>
+                                            <div class="col-6 col-md-3">
+                                                <div class="d-flex align-items-center">
+                                                    <div class="event-missed me-2" style="width: 12px; height: 12px; border-radius: 2px;"></div>
+                                                    <small class="text-muted">Missed</small>
+                                                </div>
+                                            </div>
+                                            <div class="col-6 col-md-3">
+                                                <div class="d-flex align-items-center">
+                                                    <div class="event-pending me-2" style="width: 12px; height: 12px; border-radius: 2px;"></div>
+                                                    <small class="text-muted">Pending Request</small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
-                        <?php endif; ?>
+                        </div>
+                        
+                        <!-- Mini Calendar -->
+                        <div class="calendar-container">
+                            <div id="attendanceCalendar"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -427,7 +556,433 @@ $activity_logs = $stmt->fetchAll();
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- jQuery -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    
+    <!-- FullCalendar JS -->
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js"></script>
+    
     <script>
+        let calendar;
+        const studentId = <?= $student_id ?>;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize FullCalendar
+            const calendarEl = document.getElementById('attendanceCalendar');
+            
+            calendar = new FullCalendar.Calendar(calendarEl, {
+                initialView: 'dayGridMonth',
+                headerToolbar: {
+                    left: 'prev,next today',
+                    center: 'title',
+                    right: 'dayGridMonth,timeGridWeek'
+                },
+                height: 'auto',
+                events: function(info, successCallback, failureCallback) {
+                    // Fetch attendance data for the calendar
+                    fetch(`../student/attendance_calendar_data.php?student_id=${studentId}`)
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error(`HTTP error! status: ${response.status}`);
+                            }
+                            return response.json();
+                        })
+                        .then(data => {
+                            // Check if data is an array
+                            if (!Array.isArray(data)) {
+                                console.error('Invalid data format:', data);
+                                successCallback([]);
+                                return;
+                            }
+                            
+                            const events = data.map(record => {
+                                const status = getAttendanceStatus(record);
+                                const statusClass = getStatusColorClass(status);
+                                
+                                // Handle missed days specially
+                                let title;
+                                if (record.is_missed || record.block_type === 'missed') {
+                                    title = `Missed - No Attendance`;
+                                } else {
+                                    title = `${record.block_type.charAt(0).toUpperCase() + record.block_type.slice(1)} - ${status}`;
+                                }
+                                
+                                return {
+                                    id: record.id,
+                                    title: title,
+                                    start: record.date,
+                                    allDay: true,
+                                    className: `event-${status}`,
+                                    extendedProps: {
+                                        record: record,
+                                        status: status,
+                                        statusClass: statusClass
+                                    }
+                                };
+                            });
+                            successCallback(events);
+                        })
+                        .catch(error => {
+                            console.error('Error loading calendar events:', error);
+                            successCallback([]);
+                        });
+                },
+                eventClick: function(info) {
+                    showDayAttendanceDetails(info.event.start);
+                },
+                dateClick: function(info) {
+                    showDayAttendanceDetails(info.date);
+                },
+                eventDidMount: function(info) {
+                    // Add tooltip
+                    info.el.title = `${info.event.title} - Click for details`;
+                },
+                dayMaxEvents: 2,
+                moreLinkClick: 'popover'
+            });
+
+            calendar.render();
+        });
+
+        function getAttendanceStatus(record) {
+            // Check if this is a missed day (virtual record)
+            if (record.is_missed || record.block_type === 'missed') {
+                return 'missed';
+            }
+            
+            if (record.time_in === null) {
+                return 'missed';
+            }
+            
+            if (record.time_out === null) {
+                if (record.forgot_timeout_request_id && record.forgot_timeout_status === 'pending') {
+                    return 'pending';
+                }
+                return 'incomplete';
+            }
+            
+            return 'completed';
+        }
+
+        function getStatusColorClass(status) {
+            const classes = {
+                'completed': 'event-completed',
+                'incomplete': 'event-incomplete', 
+                'missed': 'event-missed',
+                'pending': 'event-pending'
+            };
+            return classes[status] || 'event-missed';
+        }
+
+        function showDayAttendanceDetails(clickedDate) {
+            // Use local date formatting to avoid timezone issues
+            const year = clickedDate.getFullYear();
+            const month = String(clickedDate.getMonth() + 1).padStart(2, '0');
+            const day = String(clickedDate.getDate()).padStart(2, '0');
+            const dateStr = `${year}-${month}-${day}`;
+            
+            // Fetch all attendance records for this date
+            fetch(`../student/attendance_calendar_data.php?student_id=${studentId}&date=${dateStr}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(records => {
+                    // Check if data is an array
+                    if (!Array.isArray(records)) {
+                        console.error('Invalid records format:', records);
+                        showNoAttendanceModal(clickedDate);
+                        return;
+                    }
+                    
+                    if (records.length === 0) {
+                        showNoAttendanceModal(clickedDate);
+                        return;
+                    }
+                    
+                    // Check if this is a missed day
+                    const missedRecord = records.find(r => r.is_missed || r.block_type === 'missed');
+                    if (missedRecord) {
+                        showMissedDayModal(clickedDate);
+                        return;
+                    }
+                    
+                    // Group records by block type
+                    const morningRecord = records.find(r => r.block_type === 'morning');
+                    const afternoonRecord = records.find(r => r.block_type === 'afternoon');
+                    const overtimeRecord = records.find(r => r.block_type === 'overtime');
+                    
+                    const modalHtml = createDayModalHtml(clickedDate, morningRecord, afternoonRecord, overtimeRecord);
+                    
+                    // Remove existing modal if any
+                    const existingModal = document.getElementById('dayAttendanceModal');
+                    if (existingModal) {
+                        existingModal.remove();
+                    }
+                    
+                    // Add modal to body
+                    document.body.insertAdjacentHTML('beforeend', modalHtml);
+                    
+                    // Show modal
+                    const modal = new bootstrap.Modal(document.getElementById('dayAttendanceModal'));
+                    modal.show();
+                })
+                .catch(error => {
+                    console.error('Error fetching day attendance:', error);
+                    alert('Error loading attendance data: ' + error.message);
+                    showNoAttendanceModal(clickedDate);
+                });
+        }
+        
+        function createDayModalHtml(date, morningRecord, afternoonRecord, overtimeRecord) {
+            const dateFormatted = date.toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+            });
+            
+            const totalHours = parseFloat(morningRecord?.hours_earned || 0) + 
+                              parseFloat(afternoonRecord?.hours_earned || 0) + 
+                              parseFloat(overtimeRecord?.hours_earned || 0);
+            
+            return `
+                <div class="modal fade" id="dayAttendanceModal" tabindex="-1">
+                    <div class="modal-dialog modal-xl">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">
+                                    <i class="bi bi-calendar-date me-2"></i>${dateFormatted}
+                                    <span class="badge bg-primary ms-2">${(totalHours || 0).toFixed(2)} hours</span>
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="row">
+                                    ${createBlockCard('Morning', morningRecord, 'morning')}
+                                    ${createBlockCard('Afternoon', afternoonRecord, 'afternoon')}
+                                    ${createBlockCard('Overtime', overtimeRecord, 'overtime')}
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function createBlockCard(blockName, record, blockType) {
+            if (!record) {
+                return `
+                    <div class="col-md-4 mb-3">
+                        <div class="card border-secondary">
+                            <div class="card-header bg-light">
+                                <h6 class="mb-0">
+                                    <i class="bi bi-sun me-1"></i>${blockName}
+                                    <span class="badge bg-secondary float-end">No Record</span>
+                                </h6>
+                            </div>
+                            <div class="card-body text-center">
+                                <i class="bi bi-dash-circle text-muted fs-1"></i>
+                                <p class="text-muted mb-0">No attendance recorded</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            const status = getAttendanceStatus(record);
+            const statusText = getStatusDisplayText(status);
+            const statusClass = getStatusColorClass(status).replace('event-', '');
+            
+            const timeIn = record.time_in ? new Date(record.time_in).toLocaleTimeString() : 'Not recorded';
+            const timeOut = record.time_out ? new Date(record.time_out).toLocaleTimeString() : 'Not recorded';
+            const hours = record.hours_earned > 0 ? `${record.hours_earned} hours` : 'No hours earned';
+            
+            const photoHtml = record.time_in_photo_path ? `
+                <div class="text-center mt-2">
+                    <img src="../view_attendance_photo.php?id=${record.id}&type=time_in" 
+                         class="img-fluid rounded shadow-sm" 
+                         style="max-width: 200px; max-height: 150px; object-fit: cover;"
+                         alt="Time-in Photo"
+                         onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                    <div class="alert alert-warning mt-2" style="display: none; font-size: 0.8rem;">
+                        <i class="bi bi-image me-1"></i>Photo not available
+                    </div>
+                </div>
+            ` : `
+                <div class="text-center mt-2">
+                    <div class="alert alert-info py-2" style="font-size: 0.8rem;">
+                        <i class="bi bi-info-circle me-1"></i>No photo available
+                    </div>
+                </div>
+            `;
+            
+            return `
+                <div class="col-md-4 mb-3">
+                    <div class="card border-${statusClass}">
+                        <div class="card-header bg-${statusClass} text-white">
+                            <h6 class="mb-0">
+                                <i class="bi bi-${blockType === 'morning' ? 'sun' : blockType === 'afternoon' ? 'sun-fill' : 'moon'} me-1"></i>${blockName}
+                                <span class="badge bg-white text-${statusClass} float-end">${statusText}</span>
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="row mb-2">
+                                <div class="col-6">
+                                    <small class="text-muted">Time In:</small><br>
+                                    <span class="fw-bold text-success">${timeIn}</span>
+                                </div>
+                                <div class="col-6">
+                                    <small class="text-muted">Time Out:</small><br>
+                                    <span class="fw-bold text-success">${timeOut}</span>
+                                </div>
+                            </div>
+                            
+                            <div class="row mb-2">
+                                <div class="col-12">
+                                    <small class="text-muted">Hours:</small><br>
+                                    <span class="fw-bold text-primary">${hours}</span>
+                                </div>
+                            </div>
+                            
+                            ${photoHtml}
+                            
+                            ${record.forgot_timeout_request_id ? `
+                            <div class="alert alert-info mt-2 py-1" style="font-size: 0.8rem;">
+                                <i class="bi bi-info-circle me-1"></i>
+                                <strong>Request:</strong> ${record.forgot_timeout_status}
+                            </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function showMissedDayModal(date) {
+            const dateFormatted = date.toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+            });
+            
+            const modalHtml = `
+                <div class="modal fade" id="dayAttendanceModal" tabindex="-1">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header bg-danger text-white">
+                                <h5 class="modal-title">
+                                    <i class="bi bi-calendar-x me-2"></i>${dateFormatted}
+                                    <span class="badge bg-white text-danger ms-2">Missed Day</span>
+                                </h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="row">
+                                    <div class="col-12">
+                                        <div class="card border-danger">
+                                            <div class="card-header bg-danger text-white">
+                                                <h6 class="mb-0">
+                                                    <i class="bi bi-exclamation-triangle me-2"></i>No Attendance Recorded
+                                                </h6>
+                                            </div>
+                                            <div class="card-body text-center py-4">
+                                                <i class="bi bi-calendar-x text-danger" style="font-size: 3rem;"></i>
+                                                <h5 class="text-danger mt-3">Missed Day</h5>
+                                                <p class="text-muted">No attendance was recorded for this date during the student's OJT period.</p>
+                                                <div class="alert alert-warning mt-3">
+                                                    <i class="bi bi-info-circle me-2"></i>
+                                                    <strong>Note:</strong> This day is marked as missed because no attendance was recorded during the scheduled OJT period.
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Remove existing modal if any
+            const existingModal = document.getElementById('dayAttendanceModal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            // Add modal to body
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('dayAttendanceModal'));
+            modal.show();
+        }
+        
+        function showNoAttendanceModal(date) {
+            const dateFormatted = date.toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+            });
+            
+            const modalHtml = `
+                <div class="modal fade" id="dayAttendanceModal" tabindex="-1">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">
+                                    <i class="bi bi-calendar-date me-2"></i>${dateFormatted}
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body text-center">
+                                <i class="bi bi-calendar-x text-muted fs-1 mb-3"></i>
+                                <h5>No Attendance Records</h5>
+                                <p class="text-muted">No attendance was recorded for this date.</p>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Remove existing modal if any
+            const existingModal = document.getElementById('dayAttendanceModal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            // Add modal to body
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('dayAttendanceModal'));
+            modal.show();
+        }
+
+        function getStatusDisplayText(status) {
+            const texts = {
+                'completed': 'Completed',
+                'incomplete': 'Time-in Only',
+                'missed': 'Missed',
+                'pending': 'Pending Request'
+            };
+            return texts[status] || 'Unknown';
+        }
+
         function viewFullAttendance(studentId) {
             // TODO: Implement full attendance view
             alert('View full attendance for student ID: ' + studentId);

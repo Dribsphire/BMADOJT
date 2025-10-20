@@ -1,10 +1,14 @@
 <?php
 // Count pending forgot timeout requests for notification badge
 $pendingForgotTimeoutCount = 0;
+$pendingWorkplaceEditCount = 0;
+
 if (isset($_SESSION['user_id']) && isset($_SESSION['user_role']) && $_SESSION['user_role'] === 'instructor') {
     try {
         require_once '../../vendor/autoload.php';
         $pdo = \App\Utils\Database::getInstance();
+        
+        // Count forgot timeout requests
         $stmt = $pdo->prepare("
             SELECT COUNT(*) as pending_requests
             FROM forgot_timeout_requests ftr
@@ -13,6 +17,17 @@ if (isset($_SESSION['user_id']) && isset($_SESSION['user_role']) && $_SESSION['u
         ");
         $stmt->execute([$_SESSION['user_id']]);
         $pendingForgotTimeoutCount = $stmt->fetchColumn();
+        
+        // Count workplace edit requests
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) as pending_requests
+            FROM student_profiles sp
+            JOIN users u ON sp.user_id = u.id
+            WHERE u.section_id = ? AND sp.workplace_edit_request_status = 'pending'
+        ");
+        $stmt->execute([$_SESSION['user_id']]);
+        $pendingWorkplaceEditCount = $stmt->fetchColumn();
+        
     } catch (Exception $e) {
         // Silently fail if there's an error
         error_log("Sidebar notification error for user {$_SESSION['user_id']}: " . $e->getMessage());
@@ -64,6 +79,15 @@ if (isset($_SESSION['user_id']) && isset($_SESSION['user_role']) && $_SESSION['u
         <a href="document_dashboard.php">
 <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#e3e3e3"><path d="M280-280h80v-200h-80v200Zm320 0h80v-400h-80v400Zm-160 0h80v-120h-80v120Zm0-200h80v-80h-80v80ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm0-560v560-560Z"/></svg>
         <span>Document Reports</span>
+        </a>
+      </li>
+      <li>
+        <a href="dashboard.php" class="notification-link">
+<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#e3e3e3"><path d="M240-200h120v-80H240v80Zm0-160h120v-80H240v80Zm0-160h120v-80H240v80Zm240 320h240v-80H480v80Zm0-160h240v-80H480v80Zm0-160h240v-80H480v80ZM160-80q-33 0-56.5-23.5T80-160v-640q0-33 23.5-56.5T160-880h640q33 0 56.5 23.5T880-800v640q0 33-23.5 56.5T800-80H160Zm0-80h640v-640H160v640Zm0-640v640-640Z"/></svg>
+        <span>Workplace Requests</span>
+        <?php if ($pendingWorkplaceEditCount > 0): ?>
+        <span class="notification-badge"><?= $pendingWorkplaceEditCount ?></span>
+        <?php endif; ?>
         </a>
       </li>
       <li>

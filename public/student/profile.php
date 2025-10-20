@@ -9,6 +9,7 @@ require_once '../../vendor/autoload.php';
 
 use App\Services\AuthenticationService;
 use App\Services\FileUploadService;
+use App\Services\WorkplaceEditRequestService;
 use App\Middleware\AuthMiddleware;
 use App\Utils\Database;
 
@@ -18,6 +19,7 @@ session_start();
 // Initialize services
 $authService = new AuthenticationService();
 $fileUploadService = new FileUploadService();
+$workplaceEditRequestService = new WorkplaceEditRequestService();
 $authMiddleware = new AuthMiddleware();
 
 // Check authentication and authorization
@@ -220,9 +222,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         
     } elseif ($action === 'update_profile') {
-        // Check if workplace location is locked (one-time setup restriction)
-        if ($profile && $profile['workplace_location_locked']) {
-            $_SESSION['error'] = 'Workplace location is locked. Contact your instructor or admin to make changes.';
+        // Check if workplace location is locked and no approved edit request
+        $hasApprovedEditRequest = $requestStatus['workplace_edit_request_status'] === 'approved';
+        
+        if ($profile && $profile['workplace_location_locked'] && !$hasApprovedEditRequest) {
+            $_SESSION['error'] = 'Workplace information has already been set. Contact your instructor or admin to make changes.';
             header('Location: profile.php');
             exit;
         }
@@ -235,18 +239,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'ojt_start_date' => $_POST['ojt_start_date'] ?? '',
             'workplace_latitude' => $_POST['workplace_latitude'] ?? null,
             'workplace_longitude' => $_POST['workplace_longitude'] ?? null,
-            'workplace_location_locked' => 1 // Auto-lock when coordinates are set
+            'workplace_location_locked' => 1 // Always lock after saving (one-time setup rule)
         ];
         
         try {
             if ($profile) {
-                // Update existing profile (only if workplace location not set)
+                // Update existing profile
                 $stmt = $pdo->prepare("
                     UPDATE student_profiles SET 
                         workplace_name = ?, supervisor_name = ?, company_head = ?, 
                         student_position = ?, ojt_start_date = ?, workplace_latitude = ?, 
                         workplace_longitude = ?, workplace_location_locked = ?, updated_at = NOW()
-                    WHERE user_id = ? AND (workplace_latitude IS NULL OR workplace_longitude IS NULL)
+                    WHERE user_id = ?
                 ");
                 $result = $stmt->execute([
                     $profileData['workplace_name'], $profileData['supervisor_name'], 
@@ -256,10 +260,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $userId
                 ]);
                 
-                if ($stmt->rowCount() === 0) {
-                    $_SESSION['error'] = 'Workplace information has already been set. Contact your instructor or admin to make changes.';
-                    header('Location: profile.php');
-                    exit;
+                // If this was an approved edit request, reset the request status
+                if ($hasApprovedEditRequest) {
+                    $stmt = $pdo->prepare("
+                        UPDATE student_profiles SET 
+                            workplace_edit_request_status = 'none',
+                            workplace_edit_request_date = NULL,
+                            workplace_edit_request_reason = NULL,
+                            workplace_edit_approved_by = NULL,
+                            workplace_edit_approved_at = NULL,
+                            workplace_edit_hours_decision = NULL
+                        WHERE user_id = ?
+                    ");
+                    $stmt->execute([$userId]);
                 }
             } else {
                 // Create new profile
@@ -285,6 +298,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } catch (Exception $e) {
             $_SESSION['error'] = 'Error updating profile: ' . $e->getMessage();
         }
+    } elseif ($action === 'submit_workplace_edit_request') {
+        // Handle workplace edit request submission
+        $reason = trim($_POST['request_reason'] ?? '');
+        
+        $result = $workplaceEditRequestService->submitRequest($userId, $reason);
+        
+        if ($result['success']) {
+            $_SESSION['success'] = $result['message'];
+        } else {
+            $_SESSION['error'] = $result['message'];
+        }
+        
+        header('Location: profile.php');
+        exit;
     }
 }
 
@@ -292,6 +319,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $stmt = $pdo->prepare("SELECT * FROM student_profiles WHERE user_id = ?");
 $stmt->execute([$userId]);
 $profile = $stmt->fetch();
+
+// Get workplace edit request status
+$requestStatus = $workplaceEditRequestService->getRequestStatus($userId);
+
+// If workplace is locked and there's an old approved request, clear it
+if ($profile && $profile['workplace_location_locked'] && $requestStatus['workplace_edit_request_status'] === 'approved') {
+    // Clear the approved request since workplace is already locked
+    $stmt = $pdo->prepare("
+        UPDATE student_profiles SET 
+            workplace_edit_request_status = 'none',
+            workplace_edit_request_date = NULL,
+            workplace_edit_request_reason = NULL,
+            workplace_edit_approved_by = NULL,
+            workplace_edit_approved_at = NULL,
+            workplace_edit_hours_decision = NULL
+        WHERE user_id = ?
+    ");
+    $stmt->execute([$userId]);
+    
+    // Refresh request status
+    $requestStatus = $workplaceEditRequestService->getRequestStatus($userId);
+}
+
+// Debug request status
+if (isset($_GET['debug'])) {
+    echo "<div class='alert alert-warning'>";
+    echo "<strong>Request Status Debug:</strong><br>";
+    echo "Request Status: " . ($requestStatus['workplace_edit_request_status'] ?? 'none') . "<br>";
+    echo "Request Date: " . ($requestStatus['workplace_edit_request_date'] ?? 'null') . "<br>";
+    echo "Approved At: " . ($requestStatus['workplace_edit_approved_at'] ?? 'null') . "<br>";
+    echo "</div>";
+}
 
 ?>
 <!DOCTYPE html>
@@ -681,8 +740,58 @@ $profile = $stmt->fetch();
                                     
                                     <?php 
                                     $isWorkplaceLocked = $profile && $profile['workplace_location_locked'];
-                                    $isFormDisabled = $isWorkplaceLocked;
+                                    $hasApprovedEditRequest = $requestStatus['workplace_edit_request_status'] === 'approved';
+                                    
+                                    // Simple logic: if workplace is locked, disable form unless there's an approved request
+                                    if ($isWorkplaceLocked) {
+                                        $isFormDisabled = !$hasApprovedEditRequest;
+                                    } else {
+                                        $isFormDisabled = false;
+                                    }
+                                    
+                                    // Debug information (remove in production)
+                                    if (isset($_GET['debug'])) {
+                                        echo "<div class='alert alert-info'>";
+                                        echo "<strong>Debug Info:</strong><br>";
+                                        echo "isWorkplaceLocked: " . ($isWorkplaceLocked ? 'true' : 'false') . "<br>";
+                                        echo "hasApprovedEditRequest: " . ($hasApprovedEditRequest ? 'true' : 'false') . "<br>";
+                                        echo "isFormDisabled: " . ($isFormDisabled ? 'true' : 'false') . "<br>";
+                                        echo "Request Status: " . ($requestStatus['workplace_edit_request_status'] ?? 'none') . "<br>";
+                                        echo "Workplace Locked Value: " . ($profile['workplace_location_locked'] ?? 'null') . "<br>";
+                                        echo "Request Status !== 'approved': " . (($requestStatus['workplace_edit_request_status'] ?? 'none') !== 'approved' ? 'true' : 'false') . "<br>";
+                                        echo "</div>";
+                                    }
                                     ?>
+                                    
+                                    <!-- Workplace Edit Request Status -->
+                                    <?php if ($requestStatus['workplace_edit_request_status'] !== 'none'): ?>
+                                        <div class="alert alert-<?= $requestStatus['workplace_edit_request_status'] === 'pending' ? 'warning' : ($requestStatus['workplace_edit_request_status'] === 'approved' ? 'success' : 'danger') ?> mb-3">
+                                            <div class="d-flex align-items-center">
+                                                <i class="bi bi-<?= $requestStatus['workplace_edit_request_status'] === 'pending' ? 'clock' : ($requestStatus['workplace_edit_request_status'] === 'approved' ? 'check-circle' : 'x-circle') ?> me-2"></i>
+                                                <div>
+                                                    <strong>
+                                                        <?php if ($requestStatus['workplace_edit_request_status'] === 'pending'): ?>
+                                                            Edit Request Pending
+                                                        <?php elseif ($requestStatus['workplace_edit_request_status'] === 'approved'): ?>
+                                                            Edit Request Approved
+                                                        <?php else: ?>
+                                                            Edit Request Denied
+                                                        <?php endif; ?>
+                                                    </strong>
+                                                    <br>
+                                                    <small>
+                                                        <?php if ($requestStatus['workplace_edit_request_status'] === 'pending'): ?>
+                                                            Your request was submitted on <?= date('M d, Y g:i A', strtotime($requestStatus['workplace_edit_request_date'])) ?>. Waiting for instructor approval.
+                                                        <?php elseif ($requestStatus['workplace_edit_request_status'] === 'approved'): ?>
+                                                            You can now edit your workplace information. Hours decision: <?= $requestStatus['workplace_edit_hours_decision'] === 'keep' ? 'Keep existing hours' : 'Reset to zero' ?>.
+                                                        <?php else: ?>
+                                                            Your request was denied on <?= date('M d, Y g:i A', strtotime($requestStatus['workplace_edit_approved_at'])) ?>.
+                                                        <?php endif; ?>
+                                                    </small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    <?php endif; ?>
                                     
                                     <?php if ($isWorkplaceLocked): ?>
                                         <div class="alert alert-info">
@@ -692,6 +801,23 @@ $profile = $stmt->fetch();
                                     <?php endif; ?>
                                     
                                     <form method="POST" id="profileForm" <?= $isFormDisabled ? 'onsubmit="return false;"' : '' ?>>
+                                        <script>
+                                        document.addEventListener('DOMContentLoaded', function() {
+                                            const form = document.getElementById('profileForm');
+                                            console.log('Form setup - isFormDisabled:', isFormDisabled);
+                                            if (form && isFormDisabled) {
+                                                console.log('Adding form submit protection');
+                                                form.addEventListener('submit', function(e) {
+                                                    console.log('Form submit attempted but DISABLED - showing alert');
+                                                    e.preventDefault();
+                                                    alert('Workplace information has already been set. Contact your instructor or admin to make changes.');
+                                                    return false;
+                                                });
+                                            } else {
+                                                console.log('Form is ENABLED - no submit protection');
+                                            }
+                                        });
+                                        </script>
                                         <input type="hidden" name="action" value="update_profile">
                                         
                                         <div class="row">
@@ -734,17 +860,6 @@ $profile = $stmt->fetch();
                                                        <?= $isFormDisabled ? 'readonly' : 'required' ?>>
                                             </div>
                                             
-                                            <div class="col-md-6 mb-3">
-                                                <div class="form-check mt-4">
-                                                    <input class="form-check-input" type="checkbox" id="workplace_location_locked" 
-                                                           name="workplace_location_locked" 
-                                                           <?= $profile && $profile['workplace_location_locked'] ? 'checked' : '' ?>
-                                                           <?= $isFormDisabled ? 'disabled' : '' ?>>
-                                                    <label class="form-check-label" for="workplace_location_locked">
-                                                        Lock workplace location (prevents changes)
-                                                    </label>
-                                                </div>
-                                            </div>
                                         </div>
                                         
                                         <div class="mb-3">
@@ -766,7 +881,15 @@ $profile = $stmt->fetch();
                                             </div>
                                             <?php endif; ?>
                                             
-                                            <div id="map" <?= $isFormDisabled ? 'style="pointer-events: none; opacity: 0.6;"' : '' ?>></div>
+                                            <div id="map" <?= $isFormDisabled ? 'style="pointer-events: none; opacity: 0.6; position: relative;"' : '' ?>>
+                                                <?php if ($isFormDisabled): ?>
+                                                <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.8); color: white; padding: 20px; border-radius: 10px; text-align: center; z-index: 1000;">
+                                                    <i class="bi bi-lock-fill" style="font-size: 2rem; margin-bottom: 10px;"></i>
+                                                    <div><strong>Location Locked</strong></div>
+                                                    <small>Contact your instructor to make changes</small>
+                                                </div>
+                                                <?php endif; ?>
+                                            </div>
                                             
                                             <!-- GPS Accuracy Indicator -->
                                             <div id="gps-accuracy" class="mt-2" style="display: none;">
@@ -807,9 +930,11 @@ $profile = $stmt->fetch();
                                                     <i class="bi bi-lock me-2"></i>Profile Locked
                                                 </button>
                                             <?php endif; ?>
-                                            <a href="dashboard.php" class="btn btn-outline-secondary">
-                                                <i class="bi bi-arrow-left me-2" style="color:#0ea539;"></i>Request Edit
-                                            </a>
+                                            <?php if ($isWorkplaceLocked && $requestStatus['workplace_edit_request_status'] === 'none'): ?>
+                                                <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#workplaceEditRequestModal">
+                                                    <i class="bi bi-pencil-square me-2" style="color:#0ea539;"></i>Request Edit
+                                                </button>
+                                            <?php endif; ?>
                                         </div>
                                     </form>
                                 </div>
@@ -894,8 +1019,24 @@ $profile = $stmt->fetch();
         let marker;
         let currentLocation = null;
         
+        // Get form state from PHP
+        const isFormDisabled = <?= $isFormDisabled ? 'true' : 'false' ?>;
+        const isWorkplaceLocked = <?= $isWorkplaceLocked ? 'true' : 'false' ?>;
+        
+        // Debug logging
+        console.log('Debug Info:');
+        console.log('isFormDisabled:', isFormDisabled);
+        console.log('isWorkplaceLocked:', isWorkplaceLocked);
+        console.log('workplace_location_locked from DB:', <?= $profile['workplace_location_locked'] ?? 0 ?>);
+        
         // Get current location using GPS
         function getCurrentLocation() {
+            // Check if form is disabled
+            if (isFormDisabled) {
+                alert('Workplace location is locked. Contact your instructor to make changes.');
+                return;
+            }
+            
             if (!navigator.geolocation) {
                 alert('Geolocation is not supported by this browser.');
                 return;
@@ -1032,36 +1173,107 @@ $profile = $stmt->fetch();
             // Add marker if location exists
             if (lat !== defaultLat && lng !== defaultLng) {
                 marker = L.marker([lat, lng]).addTo(map);
+                
+                // Disable marker dragging if form is disabled
+                if (isFormDisabled) {
+                    marker.dragging.disable();
+                    marker.options.draggable = false;
+                    
+                    // Add drag event listener to prevent dragging
+                    marker.on('dragstart', function(e) {
+                        e.target.dragging.disable();
+                        alert('Workplace location is locked. Contact your instructor to make changes.');
+                    });
+                }
             }
             
             // Add click event to set location (only if form is not disabled)
-            <?php if (!$isFormDisabled): ?>
-            map.on('click', function(e) {
-                const lat = e.latlng.lat;
-                const lng = e.latlng.lng;
+            console.log('Setting up map click events. isFormDisabled:', isFormDisabled);
+            
+            if (!isFormDisabled) {
+                console.log('Map is ENABLED - adding click events');
+                map.on('click', function(e) {
+                    console.log('Map clicked - form is enabled');
+                    const lat = e.latlng.lat;
+                    const lng = e.latlng.lng;
+                    
+                    // Update hidden inputs
+                    document.getElementById('workplace_latitude').value = lat;
+                    document.getElementById('workplace_longitude').value = lng;
+                    
+                    // Update or create marker
+                    if (marker) {
+                        marker.setLatLng([lat, lng]);
+                    } else {
+                        marker = L.marker([lat, lng]).addTo(map);
+                    }
+                    
+                    // Ensure marker is draggable when form is enabled
+                    marker.dragging.enable();
+                    marker.options.draggable = true;
+                    
+                    // Update coordinates display
+                    updateCoordinatesDisplay(lat, lng);
+                    
+                    // Show success message
+                    showLocationMessage('Location set successfully!', 'success');
+                });
+            } else {
+                console.log('Map is DISABLED - adding protection');
+                // Map is disabled - add click protection
+                map.on('click', function(e) {
+                    console.log('Map clicked but DISABLED - showing alert');
+                    alert('Workplace location is locked. Contact your instructor to make changes.');
+                    return false;
+                });
                 
-                // Update hidden inputs
-                document.getElementById('workplace_latitude').value = lat;
-                document.getElementById('workplace_longitude').value = lng;
+                // Disable all map interactions
+                console.log('Disabling map interactions');
+                map.dragging.disable();
+                map.touchZoom.disable();
+                map.doubleClickZoom.disable();
+                map.scrollWheelZoom.disable();
+                map.boxZoom.disable();
+                map.keyboard.disable();
                 
-                // Update or create marker
+                // Disable marker dragging
                 if (marker) {
-                    marker.setLatLng([lat, lng]);
-                } else {
-                    marker = L.marker([lat, lng]).addTo(map);
+                    console.log('Disabling marker dragging');
+                    marker.dragging.disable();
+                    marker.options.draggable = false;
+                    
+                    // Add drag event listener to prevent dragging
+                    marker.on('dragstart', function(e) {
+                        console.log('Marker drag attempted - showing alert');
+                        e.target.dragging.disable();
+                        alert('Workplace location is locked. Contact your instructor to make changes.');
+                    });
                 }
-                
-                // Update coordinates display
-                updateCoordinatesDisplay(lat, lng);
-                
-                // Show success message
-                showLocationMessage('Location set successfully!', 'success');
-            });
-            <?php endif; ?>
+            }
         }
         
         // Initialize map when page loads
-        document.addEventListener('DOMContentLoaded', initMap);
+        document.addEventListener('DOMContentLoaded', function() {
+            initMap();
+            
+            // Additional marker protection after map loads
+            setTimeout(function() {
+                console.log('Additional marker protection - isFormDisabled:', isFormDisabled, 'marker exists:', !!marker);
+                if (isFormDisabled && marker) {
+                    console.log('Applying additional marker protection');
+                    marker.dragging.disable();
+                    marker.options.draggable = false;
+                    
+                    // Remove any existing drag listeners and add new ones
+                    marker.off('dragstart');
+                    marker.on('dragstart', function(e) {
+                        console.log('Additional marker drag protection triggered');
+                        e.target.dragging.disable();
+                        alert('Workplace location is locked. Contact your instructor to make changes.');
+                    });
+                }
+            }, 1000); // Wait 1 second for map to fully load
+        });
         
         // Form reset functions
         function resetBasicForm() {
@@ -1157,5 +1369,45 @@ $profile = $stmt->fetch();
             }
         });
     </script>
+    
+    <!-- Workplace Edit Request Modal -->
+    <div class="modal fade" id="workplaceEditRequestModal" tabindex="-1" aria-labelledby="workplaceEditRequestModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="workplaceEditRequestModalLabel">
+                        <i class="bi bi-pencil-square me-2"></i>Request Workplace Edit
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form method="POST" id="workplaceEditRequestForm">
+                    <input type="hidden" name="action" value="submit_workplace_edit_request">
+                    <div class="modal-body">
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle me-2"></i>
+                            <strong>Note:</strong> Once you submit this request, your instructor will review it and decide whether to approve it. If approved, you'll be able to edit your workplace information.
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="request_reason" class="form-label">Reason for Edit (Optional)</label>
+                            <textarea class="form-control" id="request_reason" name="request_reason" rows="3" 
+                                      placeholder="Please explain why you need to edit your workplace information..."></textarea>
+                        </div>
+                        
+                        <div class="alert alert-warning">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            <strong>Important:</strong> If your request is approved, your instructor will decide whether to keep your existing OJT hours or reset them to zero.
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-send me-2"></i>Submit Request
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

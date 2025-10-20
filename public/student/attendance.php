@@ -259,7 +259,7 @@ if (isset($data['error'])) {
             border-left: 4px solid #ffc107;
         }
         
-        .block-evening {
+        .block-overtime {
             border-left: 4px solid #0dcaf0;
         }
         

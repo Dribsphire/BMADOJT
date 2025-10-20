@@ -42,6 +42,7 @@ class ForgotTimeoutService
             // Filter records based on "dead time" logic
             $forgottenRecords = [];
             $currentTime = new \DateTime();
+            $currentTime->setTimezone(new \DateTimeZone('Asia/Manila')); // Ensure Philippines timezone
             $currentDate = $currentTime->format('Y-m-d');
             $currentHour = (int)$currentTime->format('H');
             

@@ -367,54 +367,85 @@ if ($profile) {
             margin-bottom: 2rem;
         }
         
-        .attendance-cards {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 1rem;
-        }
-        
-        .attendance-card {
+        /* Attendance Table Styling */
+        .attendance-table {
             background: white;
-            border-radius: 15px;
-            padding: 1.5rem;
+            overflow: hidden;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            border-left: 4px solid var(--chmsu-green);
+            border: none;
         }
         
-        .attendance-card.morning {
-            border-left-color: #ffc107;
-        }
-        
-        .attendance-card.afternoon {
-            border-left-color: #17a2b8;
-        }
-        
-        .attendance-card.overtime {
-            border-left-color: #6f42c1;
-        }
-        
-        .attendance-title {
+        .attendance-table thead th {
+            background: #0ea539;
+            color: white;
             font-weight: 600;
-            margin-bottom: 1rem;
-            color: #333;
-        }
-        
-        .attendance-details {
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-        }
-        
-        .attendance-detail {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
+            padding: 1rem 0.75rem;
             font-size: 0.9rem;
+            border: none;
         }
         
-        .attendance-detail i {
-            width: 16px;
-            color: #666;
+        .attendance-table tbody tr {
+            border-bottom: 1px solid #f0f0f0;
+            transition: all 0.3s ease;
+        }
+        
+        .attendance-table tbody tr:hover {
+            background-color: #f8f9fa;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .attendance-table tbody td {
+            padding: 1rem 0.75rem;
+            border: none;
+            vertical-align: middle;
+        }
+        
+        .attendance-table tbody tr:last-child {
+            border-bottom: none;
+        }
+        
+        /* Block Badge Styling */
+        .badge-morning {
+            color: #ffffff;
+            background:rgb(231, 143, 27);
+            border-radius: 8px;
+            font-size: 10px;
+            font-weight: 400;
+        }
+        
+        .badge-overtime {
+            background:rgb(231, 143, 27);
+            color: white;
+            border-radius: 8px;
+            font-size: 10px;
+            font-weight: 400;
+        }
+        .badge-afternoon {
+            color: #ffffff;
+            background:#0ea539;
+            border-radius: 8px;
+            font-size: 10px;
+            font-weight: 400;
+        }
+        
+        /* Table Responsive */
+        @media (max-width: 768px) {
+            .attendance-table {
+                font-size: 0.85rem;
+            }
+            
+            .attendance-table thead th,
+            .attendance-table tbody td {
+                padding: 0.75rem 0.5rem;
+            }
+            
+            .badge-morning,
+            .badge-afternoon,
+            .badge-overtime {
+                font-size: 0.75rem;
+                padding: 0.3rem 0.6rem;
+            }
         }
         
         /* Sidebar Sections */
@@ -562,9 +593,6 @@ if ($profile) {
                 grid-template-columns: 1fr;
             }
             
-            .attendance-cards {
-                grid-template-columns: 1fr;
-            }
             
             .welcome-message {
                 font-size: 1.8rem;
@@ -728,42 +756,62 @@ if ($profile) {
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <h2 class="section-title mb-0">Recent Attendance</h2>
                     </div>
-                    <div class="attendance-cards">
-                        <?php if (empty($recentAttendance)): ?>
-            <div class="col-12">
-                            <div class="text-center py-4">
-                                <i class="bi bi-calendar-x text-muted" style="font-size: 3rem;"></i>
-                                <p class="text-muted mt-2">No recent attendance records</p>
-                    </div>
+                    
+                    <?php if (empty($recentAttendance)): ?>
+                        <div class="text-center py-4">
+                            <i class="bi bi-calendar-x text-muted" style="font-size: 3rem;"></i>
+                            <p class="text-muted mt-2">No recent attendance records</p>
                         </div>
-                        <?php else: ?>
-                        <?php foreach (array_slice($recentAttendance, 0, 3) as $attendance): ?>
-                        <div class="attendance-card attendance-<?= $attendance['block_type'] ?>">
-                            <div class="attendance-title">
-                                        <?= ucfirst($attendance['block_type']) ?> Block
-                            </div>
-                            <div class="attendance-details">
-                                <div class="attendance-detail">
-                                    <i class="bi bi-calendar-date"></i>
-                                    <span><?= date('M d, Y', strtotime($attendance['date'])) ?></span>
-                                </div>
-                                <div class="attendance-detail">
-                                    <i class="bi bi-arrow-right-circle"></i>
-                                    <span>Time In: <?= $attendance['time_in'] ? date('g:i A', strtotime($attendance['time_in'])) : 'Not started' ?></span>
-                                </div>
-                                <div class="attendance-detail">
-                                    <i class="bi bi-arrow-left-circle"></i>
-                                    <span>Time Out: <?= $attendance['time_out'] ? date('g:i A', strtotime($attendance['time_out'])) : 'Not completed' ?></span>
-                                </div>
-                                <div class="attendance-detail">
-                                    <i class="bi bi-clock-history"></i>
-                                    <span>Hours: <strong><?= number_format($attendance['hours_earned'], 1) ?></strong></span>
-                                </div>
-                                </div>
-                            </div>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </div>
+                    <?php else: ?>
+                        <div class="table-responsive">
+                            <table class="table table-hover attendance-table">
+                                <thead>
+                                    <tr>
+                                        <th class="text-center">Block</th>
+                                        <th class="text-center">Date</th>
+                                        <th class="text-center">Time In</th>
+                                        <th class="text-center">Time Out</th>
+                                        <th class="text-center">Hours</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach (array_slice($recentAttendance, 0, 5) as $attendance): ?>
+                                    <tr class="attendance-row">
+                                        <td class="text-center">
+                                            <span class="badge badge-<?= $attendance['block_type'] ?>">
+                                                <?= ucfirst($attendance['block_type']) ?>
+                                            </span>
+                                        </td>
+                                        <td class="text-center">
+                                            <i class="bi bi-calendar-date me-1"></i>
+                                            <?= date('M d, Y', strtotime($attendance['date'])) ?>
+                                        </td>
+                                        <td class="text-center">
+                                            <?php if ($attendance['time_in']): ?>
+                                                <i class="bi bi-arrow-right-circle text-success me-1"></i>
+                                                <?= date('g:i A', strtotime($attendance['time_in'])) ?>
+                                            <?php else: ?>
+                                                <span class="text-muted">Not started</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td class="text-center">
+                                            <?php if ($attendance['time_out']): ?>
+                                                <i class="bi bi-arrow-left-circle text-danger me-1"></i>
+                                                <?= date('g:i A', strtotime($attendance['time_out'])) ?>
+                                            <?php else: ?>
+                                                <span class="text-muted">Not completed</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td class="text-center">
+                                            <i class="bi bi-clock-history me-1"></i>
+                                            <strong><?= number_format($attendance['hours_earned'], 1) ?>h</strong>
+                                        </td>
+                                    </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php endif; ?>
                 </div>
             </div>
 

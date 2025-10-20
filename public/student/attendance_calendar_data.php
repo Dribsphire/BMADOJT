@@ -21,7 +21,8 @@ try {
     $authService = new AuthenticationService();
     $authMiddleware = new AuthMiddleware();
     
-    if (!$authMiddleware->requireRole('student')) {
+    // Check if user is student or instructor
+    if (!$authMiddleware->check()) {
         http_response_code(401);
         echo json_encode(['error' => 'Unauthorized']);
         exit;
@@ -34,8 +35,36 @@ try {
         exit;
     }
     
+    // Check if user has valid role
+    if (!in_array($user->role, ['student', 'instructor'])) {
+        http_response_code(401);
+        echo json_encode(['error' => 'Unauthorized role']);
+        exit;
+    }
+    
     // Get database connection
     $pdo = Database::getInstance();
+    
+    // Determine student ID
+    $studentId = $user->id; // Default to current user
+    
+    // If instructor is accessing, get student ID from parameter
+    if ($user->role === 'instructor' && isset($_GET['student_id'])) {
+        $studentId = (int)$_GET['student_id'];
+        
+        // Verify instructor has access to this student
+        $stmt = $pdo->prepare("
+            SELECT u.id 
+            FROM users u 
+            WHERE u.id = ? AND u.section_id = ? AND u.role = 'student'
+        ");
+        $stmt->execute([$studentId, $user->section_id]);
+        if (!$stmt->fetch()) {
+            http_response_code(403);
+            echo json_encode(['error' => 'Access denied to this student']);
+            exit;
+        }
+    }
     $historyService = new AttendanceHistoryService($pdo);
     
     // Check if specific date or month is requested
@@ -56,7 +85,7 @@ try {
                     WHEN 'overtime' THEN 3 
                 END
         ");
-        $stmt->execute([$user->id, $monthFilter]);
+        $stmt->execute([$studentId, $monthFilter]);
         $attendanceHistory = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
         // For monthly data, just return the records without missed day logic
@@ -101,7 +130,7 @@ try {
                     WHEN 'overtime' THEN 3 
                 END
         ");
-        $stmt->execute([$user->id, $dateFilter]);
+        $stmt->execute([$studentId, $dateFilter]);
         $attendanceHistory = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
         // For specific date, just return the records without missed day logic
@@ -141,7 +170,7 @@ try {
                 FROM student_profiles 
                 WHERE user_id = ?
             ");
-            $stmt->execute([$user->id]);
+            $stmt->execute([$studentId]);
             $ojtStart = $stmt->fetch(PDO::FETCH_ASSOC);
             
             if ($ojtStart) {
@@ -172,7 +201,7 @@ try {
         }
     } else {
         // Get all attendance records for calendar (no pagination for calendar)
-        $attendanceHistory = $historyService->getAttendanceHistory($user->id, 'all', 1000, 0);
+        $attendanceHistory = $historyService->getAttendanceHistory($studentId, 'all', 1000, 0);
         
         // Get student's OJT start date from student_profiles table
         $stmt = $pdo->prepare("
@@ -180,7 +209,7 @@ try {
             FROM student_profiles 
             WHERE user_id = ?
         ");
-        $stmt->execute([$user->id]);
+        $stmt->execute([$studentId]);
         $ojtStart = $stmt->fetch(PDO::FETCH_ASSOC);
         
         $startDate = $ojtStart ? $ojtStart['ojt_start_date'] : date('Y-m-01'); // Default to current month start

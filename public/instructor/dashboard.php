@@ -8,6 +8,7 @@
 require_once '../../vendor/autoload.php';
 
 use App\Services\AuthenticationService;
+use App\Services\WorkplaceEditRequestService;
 use App\Middleware\AuthMiddleware;
 use App\Utils\Database;
 
@@ -16,6 +17,7 @@ session_start();
 
 // Initialize authentication
 $authService = new AuthenticationService();
+$workplaceEditRequestService = new WorkplaceEditRequestService();
 $authMiddleware = new AuthMiddleware();
 
 // Check authentication and authorization
@@ -73,6 +75,45 @@ $stmt = $pdo->prepare("
 ");
 $stmt->execute([$user->section_id]);
 $students = $stmt->fetchAll();
+
+// Handle workplace edit request actions
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = $_POST['action'] ?? '';
+    
+    if ($action === 'approve_workplace_edit') {
+        $studentId = (int)($_POST['student_id'] ?? 0);
+        $hoursDecision = $_POST['hours_decision'] ?? 'keep';
+        
+        $result = $workplaceEditRequestService->approveRequest($studentId, $user->id, $hoursDecision);
+        
+        if ($result['success']) {
+            $_SESSION['success'] = $result['message'];
+        } else {
+            $_SESSION['error'] = $result['message'];
+        }
+        
+        header('Location: dashboard.php');
+        exit;
+        
+    } elseif ($action === 'deny_workplace_edit') {
+        $studentId = (int)($_POST['student_id'] ?? 0);
+        
+        $result = $workplaceEditRequestService->denyRequest($studentId, $user->id);
+        
+        if ($result['success']) {
+            $_SESSION['success'] = $result['message'];
+        } else {
+            $_SESSION['error'] = $result['message'];
+        }
+        
+        header('Location: dashboard.php');
+        exit;
+    }
+}
+
+// Get pending workplace edit requests
+$pendingRequests = $workplaceEditRequestService->getPendingRequestsForInstructor($user->id);
+$pendingRequestsCount = count($pendingRequests);
 
 // Count students by status
 $onTrackCount = 0;
@@ -317,6 +358,31 @@ $stats['active_today'] = $stmt->fetchColumn();
         </div>
         <?php endif; ?>
         
+        <?php if ($pendingRequestsCount > 0): ?>
+        <!-- Workplace Edit Requests Notification -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="alert alert-info alert-dismissible fade show" role="alert">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-pencil-square fs-4 me-3"></i>
+                        <div class="flex-grow-1">
+                            <h6 class="alert-heading mb-1">
+                                <i class="bi bi-pencil-square me-2"></i>Workplace Edit Requests Need Attention
+                            </h6>
+                            <p class="mb-2">
+                                You have <strong><?= $pendingRequestsCount ?></strong> pending workplace edit request(s) that need your review and approval.
+                            </p>
+                            <button type="button" class="btn btn-info btn-sm" data-bs-toggle="modal" data-bs-target="#workplaceEditRequestsModal">
+                                <i class="bi bi-pencil-square me-1"></i>Review Requests
+                            </button>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
+        
         
         <!-- Students Overview -->
         <div class="row">
@@ -425,6 +491,187 @@ $stats['active_today'] = $stmt->fetchColumn();
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </main>
 
+    <!-- Workplace Edit Requests Modal -->
+    <div class="modal fade" id="workplaceEditRequestsModal" tabindex="-1" aria-labelledby="workplaceEditRequestsModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="workplaceEditRequestsModalLabel">
+                        <i class="bi bi-pencil-square me-2"></i>Workplace Edit Requests
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <?php if (empty($pendingRequests)): ?>
+                        <div class="text-center py-4">
+                            <i class="bi bi-check-circle text-success" style="font-size: 3rem;"></i>
+                            <p class="text-muted mt-2">No pending workplace edit requests</p>
+                        </div>
+                    <?php else: ?>
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Student</th>
+                                        <th>Current Workplace</th>
+                                        <th>Request Date</th>
+                                        <th>Reason</th>
+                                        <th>Current Hours</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($pendingRequests as $request): ?>
+                                    <tr>
+                                        <td>
+                                            <div>
+                                                <strong><?= htmlspecialchars($request['student_name']) ?></strong><br>
+                                                <small class="text-muted"><?= htmlspecialchars($request['school_id']) ?></small>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div>
+                                                <strong><?= htmlspecialchars($request['workplace_name']) ?></strong><br>
+                                                <small class="text-muted"><?= htmlspecialchars($request['supervisor_name']) ?></small>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <?= date('M d, Y g:i A', strtotime($request['workplace_edit_request_date'])) ?>
+                                        </td>
+                                        <td>
+                                            <?= $request['workplace_edit_request_reason'] ? htmlspecialchars($request['workplace_edit_request_reason']) : '<em>No reason provided</em>' ?>
+                                        </td>
+                                        <td>
+                                            <strong><?= number_format($request['total_hours_accumulated'], 1) ?>h</strong>
+                                        </td>
+                                        <td>
+                                            <div class="btn-group" role="group">
+                                                <button type="button" class="btn btn-success btn-sm" 
+                                                        onclick="showApproveModal(<?= $request['user_id'] ?>, '<?= htmlspecialchars($request['student_name']) ?>', <?= $request['total_hours_accumulated'] ?>)">
+                                                    <i class="bi bi-check-circle me-1"></i>Approve
+                                                </button>
+                                                <button type="button" class="btn btn-danger btn-sm" 
+                                                        onclick="showDenyModal(<?= $request['user_id'] ?>, '<?= htmlspecialchars($request['student_name']) ?>')">
+                                                    <i class="bi bi-x-circle me-1"></i>Deny
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php endif; ?>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Approve Request Modal -->
+    <div class="modal fade" id="approveRequestModal" tabindex="-1" aria-labelledby="approveRequestModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="approveRequestModalLabel">
+                        <i class="bi bi-check-circle me-2"></i>Approve Workplace Edit Request
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form method="POST" id="approveRequestForm">
+                    <input type="hidden" name="action" value="approve_workplace_edit">
+                    <input type="hidden" name="student_id" id="approve_student_id">
+                    <div class="modal-body">
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle me-2"></i>
+                            <strong>Student:</strong> <span id="approve_student_name"></span><br>
+                            <strong>Current Hours:</strong> <span id="approve_current_hours"></span>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Hours Decision</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="hours_decision" id="keep_hours" value="keep" checked>
+                                <label class="form-check-label" for="keep_hours">
+                                    <strong>Keep existing hours</strong> - Student will retain their current accumulated hours
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="hours_decision" id="reset_hours" value="reset">
+                                <label class="form-check-label" for="reset_hours">
+                                    <strong>Reset to zero</strong> - Student will start with 0 hours in their new workplace
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="alert alert-warning">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            <strong>Note:</strong> Once approved, the student will be able to edit their workplace information immediately.
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-check-circle me-2"></i>Approve Request
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Deny Request Modal -->
+    <div class="modal fade" id="denyRequestModal" tabindex="-1" aria-labelledby="denyRequestModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="denyRequestModalLabel">
+                        <i class="bi bi-x-circle me-2"></i>Deny Workplace Edit Request
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form method="POST" id="denyRequestForm">
+                    <input type="hidden" name="action" value="deny_workplace_edit">
+                    <input type="hidden" name="student_id" id="deny_student_id">
+                    <div class="modal-body">
+                        <div class="alert alert-warning">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            <strong>Student:</strong> <span id="deny_student_name"></span>
+                        </div>
+                        
+                        <p>Are you sure you want to deny this workplace edit request? The student will not be able to edit their workplace information.</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-danger">
+                            <i class="bi bi-x-circle me-2"></i>Deny Request
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showApproveModal(studentId, studentName, currentHours) {
+            document.getElementById('approve_student_id').value = studentId;
+            document.getElementById('approve_student_name').textContent = studentName;
+            document.getElementById('approve_current_hours').textContent = currentHours + ' hours';
+            
+            const modal = new bootstrap.Modal(document.getElementById('approveRequestModal'));
+            modal.show();
+        }
+        
+        function showDenyModal(studentId, studentName) {
+            document.getElementById('deny_student_id').value = studentId;
+            document.getElementById('deny_student_name').textContent = studentName;
+            
+            const modal = new bootstrap.Modal(document.getElementById('denyRequestModal'));
+            modal.show();
+        }
+    </script>
 
 </body>
 </html>

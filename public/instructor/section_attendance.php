@@ -125,11 +125,15 @@ $attendanceRecords = $stmt->fetchAll(PDO::FETCH_ASSOC);
             font-size: 14px;
         }
         .student-name {
-            cursor: pointer;
             color: #0ea539;
             font-weight: 600;
         }
-        .student-name:hover {
+        .table-row-hover:hover {
+            background-color: #f8f9fa;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .table-row-hover:hover .student-name {
             text-decoration: underline;
         }
         .status-badge {
@@ -149,6 +153,19 @@ $attendanceRecords = $stmt->fetchAll(PDO::FETCH_ASSOC);
             height: 200px;
             border-radius: 8px;
             border: 1px solid #ddd;
+        }
+        
+        .student-avatar {
+            flex-shrink: 0;
+        }
+        
+        .profile-image {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #0ea539;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
     </style>
 </head>
@@ -264,16 +281,22 @@ $attendanceRecords = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                     <th>Time Out</th>
                                     <th>Hours</th>
                                     <th>Status</th>
-                                    <th>Location</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php foreach ($attendanceRecords as $record): ?>
-                                    <tr>
+                                    <tr onclick="showStudentDetails(<?php echo htmlspecialchars(json_encode($record)); ?>)" style="cursor: pointer;" class="table-row-hover">
                                         <td>
                                             <div class="d-flex align-items-center">
-                                                <div class="avatar-sm bg-primary text-white rounded-circle d-flex align-items-center justify-content-center me-2" style="width: 32px; height: 32px; font-size: 12px;">
+                                                <div class="student-avatar me-2">
                                                     <?php 
+                                                    // Check if profile_picture exists and is not empty
+                                                    $hasProfilePic = !empty($record['profile_picture']) && $record['profile_picture'] !== null;
+                                                    
+                                                    // Use absolute path for file existence check
+                                                    $absoluteProfilePath = $hasProfilePic ? __DIR__ . '/../../uploads/profiles/' . $record['profile_picture'] : '';
+                                                    
+                                                    // Generate initials for fallback
                                                     $nameParts = explode(' ', $record['full_name']);
                                                     $initials = '';
                                                     if (count($nameParts) >= 2) {
@@ -281,11 +304,18 @@ $attendanceRecords = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                                     } else {
                                                         $initials = strtoupper(substr($record['full_name'], 0, 2));
                                                     }
-                                                    echo $initials;
+                                                    
+                                                    // Show profile picture if exists, otherwise show initials
+                                                    if ($hasProfilePic && file_exists($absoluteProfilePath)) {
+                                                        $profilePicPath = '../../uploads/profiles/' . $record['profile_picture'];
+                                                        echo '<img src="' . htmlspecialchars($profilePicPath) . '" alt="Student Profile" class="profile-image">';
+                                                    } else {
+                                                        echo '<div class="avatar-sm bg-primary text-white rounded-circle d-flex align-items-center justify-content-center" style="width: 50px; height: 50px; font-size: 12px;">' . $initials . '</div>';
+                                                    }
                                                     ?>
                                                 </div>
                                                 <div>
-                                                    <div class="student-name" onclick="showStudentDetails(<?php echo htmlspecialchars(json_encode($record)); ?>)">
+                                                    <div class="student-name">
                                                         <?php echo htmlspecialchars($record['full_name']); ?>
                                                     </div>
                                                     <small class="text-muted"><?php echo htmlspecialchars($record['school_id']); ?></small>
@@ -332,20 +362,6 @@ $attendanceRecords = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                             }
                                             ?>
                                             <span class="badge <?php echo $statusClass; ?> status-badge"><?php echo $statusText; ?></span>
-                                        </td>
-                                        <td>
-                                            <div class="card-body">
-                                            <?php if ($record['location_lat_in'] && $record['location_long_in']): ?>
-                                                <span class="location-info">
-                                                    <i class="bi bi-geo-alt"></i> 
-                                                    <?php echo number_format($record['location_lat_in'], 4); ?>, 
-                                                    <?php echo number_format($record['location_long_in'], 4); ?>
-                                                </span>
-                                            <?php else: ?>
-                                                <span class="text-muted">No location</span>
-                                            <?php endif; ?>
-                                            </div>
-                                            
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>

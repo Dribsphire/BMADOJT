@@ -28,7 +28,7 @@
             padding: 3rem;
             text-align: center;
             max-width: 500px;
-            width: 100%;
+            width: 90%;
         }
         
         .error-icon {
@@ -51,7 +51,7 @@
     </style>
 </head>
 <body>
-    <div class="container">
+
         <div class="error-container">
             <div class="error-icon">
                 <i class="bi bi-shield-exclamation"></i>
@@ -64,7 +64,7 @@
                 <i class="bi bi-arrow-left me-2"></i>Back to Login
             </a>
         </div>
-    </div>
+
     
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>

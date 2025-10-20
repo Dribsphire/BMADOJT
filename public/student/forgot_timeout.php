@@ -298,6 +298,10 @@ foreach ($existingRequests as $request) {
                                                     'afternoon' => 'sun-fill',
                                                     'overtime' => 'moon'
                                                 ];
+                                                
+                                                // Ensure block type exists in arrays
+                                                $blockColor = isset($blockColors[$record['block_type']]) ? $blockColors[$record['block_type']] : 'secondary';
+                                                $blockIcon = isset($blockIcons[$record['block_type']]) ? $blockIcons[$record['block_type']] : 'clock';
                                                 ?>
                                                 <div class="col-md-6 col-lg-4">
                                                     <div class="card missed-block-card h-100" 
@@ -306,18 +310,18 @@ foreach ($existingRequests as $request) {
                                                         data-block="<?= $record['block_type'] ?>"
                                                         data-time-in="<?= $record['time_in'] ?>"
                                                         style="cursor: pointer; transition: all 0.3s ease;">
-                                                        <div class="card-header bg-<?= $blockColors[$record['block_type']] ?> text-white">
+                                                        <div class="card-header bg-<?= $blockColor ?> text-white">
                                                             <div class="d-flex align-items-center justify-content-between">
                                                                 <div>
                                                                     <h6 class="mb-0">
-                                                                        <i class="bi bi-<?= $blockIcons[$record['block_type']] ?> me-2"></i>
+                                                                        <i class="bi bi-<?= $blockIcon ?> me-2"></i>
                                                         <?= ucfirst($record['block_type']) ?> Block
                                                                     </h6>
                                                                     <small class="opacity-75">
                                                                         <?= $recordDate ? $recordDate->format('M j, Y') : $record['date'] ?>
                                                                     </small>
                                                                 </div>
-                                                                <span class="badge bg-white text-<?= $blockColors[$record['block_type']] ?>">
+                                                                <span class="badge bg-white text-<?= $blockColor ?>">
                                                                     <?= $isToday ? 'Today' : 'Past' ?>
                                                                 </span>
                                                             </div>
@@ -359,7 +363,7 @@ foreach ($existingRequests as $request) {
                                                                         <i class="bi bi-x-circle me-1"></i>Rejected
                                                                     </button>
                                                                 <?php else: ?>
-                                                                    <button class="btn btn-outline-<?= $blockColors[$record['block_type']] ?> btn-sm" data-has-request="false">
+                                                                    <button class="btn btn-outline-<?= $blockColor ?> btn-sm" data-has-request="false">
                                                                         <i class="bi bi-plus-circle me-1"></i>Submit Request
                                                     </button>
                                                                 <?php endif; ?>

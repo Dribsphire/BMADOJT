@@ -17,7 +17,7 @@ try {
     $authService = new AuthenticationService();
     $authMiddleware = new AuthMiddleware();
     
-    if (!$authMiddleware->requireRole('student')) {
+    if (!$authMiddleware->check()) {
         http_response_code(401);
         echo "Unauthorized access";
         exit;
@@ -27,6 +27,13 @@ try {
     if (!$user) {
         http_response_code(401);
         echo "User not found";
+        exit;
+    }
+    
+    // Check if user has valid role
+    if (!in_array($user->role, ['student', 'instructor', 'admin'])) {
+        http_response_code(401);
+        echo "Unauthorized role";
         exit;
     }
     
@@ -49,13 +56,38 @@ try {
     // Get database connection
     $pdo = Database::getInstance();
     
-    // Verify the attendance record belongs to the current user
-    $stmt = $pdo->prepare("
-        SELECT id, photo_path 
-        FROM attendance_records 
-        WHERE id = ? AND student_id = ?
-    ");
-    $stmt->execute([$recordId, $user->id]);
+    // Verify the attendance record access
+    if ($user->role === 'student') {
+        // Students can only view their own photos
+        $stmt = $pdo->prepare("
+            SELECT id, photo_path 
+            FROM attendance_records 
+            WHERE id = ? AND student_id = ?
+        ");
+        $stmt->execute([$recordId, $user->id]);
+    } elseif ($user->role === 'instructor') {
+        // Instructors can view photos of students in their section
+        $stmt = $pdo->prepare("
+            SELECT ar.id, ar.photo_path 
+            FROM attendance_records ar
+            JOIN users u ON ar.student_id = u.id
+            WHERE ar.id = ? AND u.section_id = ? AND u.role = 'student'
+        ");
+        $stmt->execute([$recordId, $user->section_id]);
+    } elseif ($user->role === 'admin') {
+        // Admins can view all photos
+        $stmt = $pdo->prepare("
+            SELECT id, photo_path 
+            FROM attendance_records 
+            WHERE id = ?
+        ");
+        $stmt->execute([$recordId]);
+    } else {
+        http_response_code(403);
+        echo "Access denied";
+        exit;
+    }
+    
     $record = $stmt->fetch(PDO::FETCH_ASSOC);
     
     if (!$record) {

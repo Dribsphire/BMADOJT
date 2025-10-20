@@ -130,12 +130,12 @@ foreach ($requiredTypes as $type => $name) {
         'statusText' => $statusText,
         'created' => $studentDoc ? $studentDoc['created_at'] : date('Y-m-d H:i:s'),
         'lastActivity' => $studentDoc ? $studentDoc['updated_at'] : date('Y-m-d H:i:s'),
-        'recipients' => ['Instructor'],
         'isTemplate' => true,
         'filePath' => $templatePath,
         'deadline' => $templateDeadline,
         'uploadDate' => $templateUploadDate,
-        'isNew' => $isNew
+        'isNew' => $isNew,
+        'instructor_feedback' => $studentDoc ? $studentDoc['instructor_feedback'] : null
     ];
 }
 
@@ -170,12 +170,12 @@ foreach ($customDocs as $customDoc) {
         'statusText' => $statusText,
         'created' => $customSubmission ? $customSubmission['created_at'] : date('Y-m-d H:i:s'),
         'lastActivity' => $customSubmission ? $customSubmission['updated_at'] : date('Y-m-d H:i:s'),
-        'recipients' => ['Instructor'],
         'isTemplate' => false,
         'filePath' => $customSubmission ? ($customSubmission['submission_file_path'] ?? null) : $customDoc->file_path,
         'deadline' => $customDoc->deadline,
         'uploadDate' => $customDoc->created_at,
-        'isNew' => $isNewCustom
+        'isNew' => $isNewCustom,
+        'instructor_feedback' => $customSubmission ? $customSubmission['instructor_feedback'] : null
     ];
 }
 
@@ -230,22 +230,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             throw new Exception('Failed to save uploaded file');
         }
         
-        // Update or insert submission record
+        // Check if document already exists and handle revision workflow
         $stmt = $pdo->prepare("
-            INSERT INTO student_documents (student_id, document_id, submission_file_path, status, submitted_at, created_at, updated_at) 
-            VALUES (?, ?, ?, 'pending', NOW(), NOW(), NOW())
-            ON DUPLICATE KEY UPDATE 
-            submission_file_path = VALUES(submission_file_path),
-            status = 'pending',
-            submitted_at = NOW(),
-            updated_at = NOW()
+            SELECT id, status FROM student_documents 
+            WHERE student_id = ? AND document_id = ?
         ");
+        $stmt->execute([$_SESSION['user_id'], $documentId]);
+        $existingSubmission = $stmt->fetch(PDO::FETCH_ASSOC);
         
-        $stmt->execute([$_SESSION['user_id'], $documentId, $filePath]);
+        if ($existingSubmission) {
+            // Document already exists - check if resubmission is allowed
+            $currentStatus = $existingSubmission['status'];
+            
+            if ($currentStatus === 'approved') {
+                throw new Exception('This document has already been approved and cannot be resubmitted.');
+            } elseif ($currentStatus === 'pending') {
+                throw new Exception('This document is already submitted and pending instructor review. Please wait for feedback before resubmitting.');
+            } elseif ($currentStatus === 'revision_required') {
+                // Allow resubmission for revision required documents
+                $stmt = $pdo->prepare("
+                    UPDATE student_documents 
+                    SET submission_file_path = ?, 
+                        status = 'pending', 
+                        submitted_at = NOW(), 
+                        updated_at = NOW(),
+                        instructor_feedback = NULL
+                    WHERE id = ?
+                ");
+                $stmt->execute([$filePath, $existingSubmission['id']]);
+            } else {
+                // For rejected documents, allow resubmission
+                $stmt = $pdo->prepare("
+                    UPDATE student_documents 
+                    SET submission_file_path = ?, 
+                        status = 'pending', 
+                        submitted_at = NOW(), 
+                        updated_at = NOW(),
+                        instructor_feedback = NULL
+                    WHERE id = ?
+                ");
+                $stmt->execute([$filePath, $existingSubmission['id']]);
+            }
+        } else {
+            // New submission
+            $stmt = $pdo->prepare("
+                INSERT INTO student_documents (student_id, document_id, submission_file_path, status, submitted_at, created_at, updated_at) 
+                VALUES (?, ?, ?, 'pending', NOW(), NOW(), NOW())
+            ");
+            $stmt->execute([$_SESSION['user_id'], $documentId, $filePath]);
+        }
         
         // Return success response
         header('Content-Type: application/json');
-        echo json_encode(['success' => true, 'message' => 'Document submitted successfully']);
+        if ($existingSubmission && $existingSubmission['status'] === 'revision_required') {
+            echo json_encode(['success' => true, 'message' => 'Document resubmitted successfully. It is now pending instructor review.']);
+        } elseif ($existingSubmission && $existingSubmission['status'] === 'rejected') {
+            echo json_encode(['success' => true, 'message' => 'Document resubmitted successfully. It is now pending instructor review.']);
+        } else {
+            echo json_encode(['success' => true, 'message' => 'Document submitted successfully. It is now pending instructor review.']);
+        }
         exit;
         
     } catch (Exception $e) {
@@ -324,18 +367,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         .status-expired { background: #dc3545; color: white; }
         .status-suggest-edits { background: #fd7e14; color: white; }
         
-        .recipient-avatar {
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            background: var(--chmsu-green);
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.75rem;
-            font-weight: 600;
-        }
         
         .table th {
             border-top: none;
@@ -448,7 +479,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             
             .table tbody td:first-child .fw-semibold {
                 font-size: 1rem;
-                font-weight: 600;
+            font-weight: 600;
                 color: #333;
                 margin-bottom: 0.25rem;
             }
@@ -459,8 +490,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
             
             /* Status and type row */
-            .table tbody td:nth-child(4),
-            .table tbody td:nth-child(5) {
+            .table tbody td:nth-child(3),
+            .table tbody td:nth-child(4) {
                 display: inline-block;
                 margin-right: 0.5rem;
                 margin-bottom: 0.5rem;
@@ -473,10 +504,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 margin-bottom: 0.5rem;
             }
             
-            /* Recipients row */
-            .table tbody td:nth-child(3) {
-                display: none;
-            }
             
             /* Actions row */
             .table tbody td:last-child {
@@ -687,7 +714,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                 <li><a class="dropdown-item" href="#">Date</a></li>
                                 <li><a class="dropdown-item" href="#">Status</a></li>
                             </ul>
-        </div>
+            </div>
 
                         <div class="d-flex gap-2 align-items-center">
                         <div class="input-group" style="max-width: 300px;">
@@ -696,8 +723,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             <button class="btn btn-outline-secondary" type="button" id="clearSearchBtn" onclick="clearSearch()">
                                 <i class="bi bi-x"></i>
                             </button>
-            </div>
-            
+        </div>
+
             <!-- Mobile search info -->
             <div class="d-md-none text-muted small">
                 <i class="bi bi-info-circle me-1"></i>Tap documents to view details
@@ -717,7 +744,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         <tr>
                                     <th>Name</th>
                                     <th>Date uploaded</th>
-                                    <th>Recipients</th>
                             <th>Status</th>
                             <th>Type</th>
                                     <th width="120">Actions</th>
@@ -747,13 +773,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                         <span class="mobile-label d-md-none">Last Activity: </span>
                             </td>
                             <td>
-                                        <div class="d-flex align-items-center">
-                                            <div class="recipient-avatar me-1">I</div>
-                                            <span class="badge bg-light text-dark">1</span>
-                                </div>
-                                <span class="mobile-label d-md-none">Recipients: </span>
-                            </td>
-                            <td>
                                         <span class="status-badge status-<?= strtolower(str_replace(' ', '-', $doc['statusText'])) ?>">
                                             <?= $doc['statusText'] ?>
                                     </span>
@@ -762,15 +781,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             <td>
                                         <span class="badge bg-<?= $doc['isTemplate'] ? 'primary' : 'info' ?>">
                                             <?= $doc['type'] ?>
-                                        </span>
+                                    </span>
                                         <span class="mobile-label d-md-none">Type: </span>
                             </td>
                             <td>
                                         <div class="btn-group btn-group-sm" role="group">
-                            <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#documentModal" onclick="loadDocument('<?= $doc['id'] ?>', '<?= htmlspecialchars($doc['name']) ?>', '<?= $doc['status'] ?>', '<?= $doc['filePath'] ?? '' ?>', '<?= $doc['deadline'] ?? '' ?>')">
+                            <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#documentModal" onclick="loadDocument('<?= $doc['id'] ?>', '<?= htmlspecialchars($doc['name']) ?>', '<?= $doc['status'] ?>', '<?= $doc['filePath'] ?? '' ?>', '<?= $doc['deadline'] ?? '' ?>', '<?= htmlspecialchars($doc['instructor_feedback'] ?? '') ?>')">
                                 <i class="bi bi-eye"></i> View
                             </button>
-                                        </div>
+                                </div>
                             </td>
                         </tr>
                         <?php endforeach; ?>
@@ -783,8 +802,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     <i class="bi bi-file-earmark-text" style="font-size: 3rem; color: #6c757d;"></i>
                     <h5 class="mt-3 text-muted">No Documents Found</h5>
                     <p class="text-muted">No documents are available at the moment.</p>
-                </div>
-                <?php endif; ?>
+        </div>
+        <?php endif; ?>
             </div>
         </div>
                                     </div>
@@ -971,7 +990,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         });
         
         // Load document in modal
-    function loadDocument(id, name, status, filePath, deadline) {
+    function loadDocument(id, name, status, filePath, deadline, instructorFeedback = '') {
         document.getElementById('modalDocumentName').textContent = name;
         document.getElementById('modalDocumentStatus').textContent = status;
         document.getElementById('modalDocumentStatus').className = 'badge bg-' + getStatusColor(status);
@@ -994,17 +1013,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         const submitBtn = document.getElementById('submitDocumentBtn');
         console.log('Document status:', status); // Debug log
         
-        // Check for completed status (multiple variations)
+        // Handle different document statuses
         if (status === 'Completed' || status === 'completed' || status === 'Approved' || status === 'approved') {
+            // Document is already approved - no resubmission allowed
             submitBtn.disabled = true;
             submitBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Already Completed';
             submitBtn.className = 'btn btn-success disabled';
-            console.log('Button disabled for completed document'); // Debug log
+            console.log('Button disabled for completed document');
+        } else if (status === 'Sent' || status === 'sent' || status === 'Pending' || status === 'pending') {
+            // Document is already submitted and pending - no resubmission allowed
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="bi bi-clock me-1"></i>Pending Review';
+            submitBtn.className = 'btn btn-warning disabled';
+            console.log('Button disabled for pending document');
+        } else if (status === 'Suggest Edits' || status === 'suggest_edits' || status === 'Revision Required' || status === 'revision_required') {
+            // Document needs revision - allow resubmission
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Resubmit Document';
+            submitBtn.className = 'btn btn-warning';
+            console.log('Button enabled for revision required document');
+        } else if (status === 'Expired' || status === 'expired' || status === 'Rejected' || status === 'rejected') {
+            // Document was rejected - allow resubmission
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="bi bi-upload me-1"></i>Submit Document';
+            submitBtn.className = 'btn btn-danger';
+            console.log('Button enabled for rejected document');
         } else {
+            // Draft or not started - allow submission
             submitBtn.disabled = false;
             submitBtn.innerHTML = '<i class="bi bi-upload me-1"></i>Submit Document';
             submitBtn.className = 'btn btn-success';
-            console.log('Button enabled for document status:', status); // Debug log
+            console.log('Button enabled for draft document');
         }
         
         // Display deadline
@@ -1023,6 +1062,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             `;
         } else {
             deadlineElement.innerHTML = '<span class="text-muted">No deadline set</span>';
+        }
+        
+        // Display instructor feedback if available
+        const feedbackSection = document.getElementById('instructorFeedbackSection');
+        const feedbackElement = document.getElementById('instructorFeedback');
+        
+        if (instructorFeedback && instructorFeedback.trim() !== '') {
+            feedbackElement.innerHTML = `<i class="bi bi-chat-dots me-2"></i>${instructorFeedback}`;
+            feedbackSection.style.display = 'block';
+        } else {
+            feedbackSection.style.display = 'none';
         }
             
             // Load document preview
@@ -1148,14 +1198,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         // Check if submit button is disabled
         const submitBtn = document.getElementById('submitDocumentBtn');
         if (submitBtn.disabled) {
-            alert('This document has already been completed and approved. You cannot submit it again.');
+            const currentStatus = document.getElementById('modalDocumentStatus').textContent.trim();
+            if (currentStatus === 'Already Completed') {
+                alert('This document has already been completed and approved. You cannot submit it again.');
+            } else if (currentStatus === 'Pending Review') {
+                alert('This document is already submitted and pending instructor review. Please wait for the instructor\'s feedback before resubmitting.');
+            }
             return;
         }
         
-        // Check if document is already completed
+        // Check document status for additional validation
         const currentStatus = document.getElementById('modalDocumentStatus').textContent.trim();
-        if (currentStatus === 'Completed' || currentStatus === 'completed' || currentStatus === 'Approved' || currentStatus === 'approved') {
-            alert('This document has already been completed and approved. You cannot submit it again.');
+        if (currentStatus === 'Already Completed' || currentStatus === 'Pending Review') {
+            alert('This document cannot be submitted at this time. Please check the document status.');
             return;
         }
         
@@ -1311,6 +1366,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                 <p><strong>Name:</strong> <span id="modalDocumentName"></span></p>
                                 <p><strong>Status:</strong> <span id="modalDocumentStatus" class="badge"></span></p>
                                 <p><strong>Deadline:</strong> <span id="modalDocumentDeadline"></span></p>
+                                <div id="instructorFeedbackSection" style="display: none;">
+                                    <p><strong>Instructor Feedback:</strong></p>
+                                    <div id="instructorFeedback" class="alert alert-warning"></div>
+                                </div>
                             </div>
                             <div class="col-md-6">
                                 <h6>Actions</h6>
