@@ -290,11 +290,9 @@ $attendanceRecords = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                             <div class="d-flex align-items-center">
                                                 <div class="student-avatar me-2">
                                                     <?php 
-                                                    // Check if profile_picture exists and is not empty
-                                                    $hasProfilePic = !empty($record['profile_picture']) && $record['profile_picture'] !== null;
-                                                    
-                                                    // Use absolute path for file existence check
-                                                    $absoluteProfilePath = $hasProfilePic ? __DIR__ . '/../../uploads/profiles/' . $record['profile_picture'] : '';
+                                                    // Use FileUploadService for consistent profile picture handling
+                                                    $fileUploadService = new \App\Services\FileUploadService();
+                                                    $profilePictureUrl = $fileUploadService->getProfilePictureUrl($record['profile_picture'] ?? null);
                                                     
                                                     // Generate initials for fallback
                                                     $nameParts = explode(' ', $record['full_name']);
@@ -305,10 +303,9 @@ $attendanceRecords = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                                         $initials = strtoupper(substr($record['full_name'], 0, 2));
                                                     }
                                                     
-                                                    // Show profile picture if exists, otherwise show initials
-                                                    if ($hasProfilePic && file_exists($absoluteProfilePath)) {
-                                                        $profilePicPath = '../../uploads/profiles/' . $record['profile_picture'];
-                                                        echo '<img src="' . htmlspecialchars($profilePicPath) . '" alt="Student Profile" class="profile-image">';
+                                                    // Show profile picture or initials
+                                                    if ($record['profile_picture'] && !strpos($profilePictureUrl, 'default-avatar')) {
+                                                        echo '<img src="' . htmlspecialchars($profilePictureUrl) . '" alt="Student Profile" class="profile-image">';
                                                     } else {
                                                         echo '<div class="avatar-sm bg-primary text-white rounded-circle d-flex align-items-center justify-content-center" style="width: 50px; height: 50px; font-size: 12px;">' . $initials . '</div>';
                                                     }

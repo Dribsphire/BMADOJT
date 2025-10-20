@@ -276,33 +276,11 @@ class FileUploadService
     public function getProfilePictureUrl(?string $filename): string
     {
         if (!$filename || !file_exists($this->uploadPath . $filename)) {
-            // Use dynamic path that works in both local and hosting environments
-            $baseUrl = $this->getBaseUrl();
-            return $baseUrl . '/assets/images/default-avatar.svg';
+            // Return default avatar with relative path
+            return '../assets/images/default-avatar.svg';
         }
         
-        // Use dynamic path that works in both local and hosting environments
-        $baseUrl = $this->getBaseUrl();
-        return $baseUrl . '/view_image.php?file=' . urlencode($filename);
-    }
-    
-    /**
-     * Get base URL dynamically
-     */
-    private function getBaseUrl(): string
-    {
-        // Get the current directory structure
-        $currentDir = dirname($_SERVER['PHP_SELF']);
-        
-        // Remove the 'public' part from the path if it exists
-        $basePath = str_replace('/public', '', $currentDir);
-        
-        // If we're in a subdirectory (like /bmadOJT), include it
-        if (strpos($basePath, '/bmadOJT') !== false) {
-            return $basePath;
-        }
-        
-        // For hosting, we might need to adjust this
-        return $basePath;
+        // Use relative path to view_image.php
+        return '../view_image.php?file=' . urlencode($filename);
     }
 }

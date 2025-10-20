@@ -354,22 +354,15 @@ $activity_logs = $stmt->fetchAll();
                                 <div class="d-flex align-items-center gap-3">
                                     <div class="student-avatar">
                                         <?php 
-                                        // Check if profile_picture exists and is not empty
-                                        $hasProfilePic = !empty($student['profile_picture']) && $student['profile_picture'] !== null;
-                                        
-                                        // Use absolute path for file existence check
-                                        $absoluteProfilePath = $hasProfilePic ? __DIR__ . '/../../uploads/profiles/' . $student['profile_picture'] : '';
-                                        $profilePicPath = $hasProfilePic ? '../../uploads/profiles/' . $student['profile_picture'] : '';
-                                        $defaultPicPath = '../assets/images/default-avatar.svg';
-                                        
-                                        // Check file existence using absolute path, but use relative path for display
-                                        $fullPath = ($hasProfilePic && file_exists($absoluteProfilePath)) ? $profilePicPath : $defaultPicPath;
+                                        // Use FileUploadService for consistent profile picture handling
+                                        $fileUploadService = new \App\Services\FileUploadService();
+                                        $profilePictureUrl = $fileUploadService->getProfilePictureUrl($student['profile_picture'] ?? null);
                                         
                                         ?>
-                                        <img src="<?= htmlspecialchars($fullPath) ?>" 
+                                        <img src="<?= htmlspecialchars($profilePictureUrl) ?>" 
                                              alt="Student Profile" 
                                              class="profile-image"
-                                             onerror="this.src='<?= htmlspecialchars($defaultPicPath) ?>'">
+                                             onerror="this.src='<?= htmlspecialchars($profilePictureUrl) ?>'">
                                     </div>
                                     <div class="student-info">
                                         <div class="student-name"><?= htmlspecialchars($student['full_name']) ?></div>
