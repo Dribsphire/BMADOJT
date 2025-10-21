@@ -85,6 +85,55 @@
         .badge {
             font-size: 0.75rem;
         }
+        
+        /* Fix modal backdrop overlay issue - Custom backdrop */
+        .modal-backdrop {
+            display: none !important;
+        }
+        
+        .modal {
+            z-index: 1070 !important;
+            pointer-events: auto !important;
+        }
+        
+        .modal-dialog {
+            z-index: 1070 !important;
+            pointer-events: auto !important;
+        }
+        
+        .modal-content {
+            z-index: 1070 !important;
+            pointer-events: auto !important;
+        }
+        
+        /* Custom backdrop for modals */
+        .modal.show::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1060;
+            pointer-events: none;
+        }
+        
+        /* Ensure modal content is clickable and cursor works */
+        .modal-content * {
+            pointer-events: auto !important;
+        }
+        
+        /* Fix cursor in input fields */
+        .modal input, .modal textarea, .modal select {
+            pointer-events: auto !important;
+            cursor: text !important;
+        }
+        
+        .modal button {
+            pointer-events: auto !important;
+            cursor: pointer !important;
+        }
     </style>
 </head>
 <body>
@@ -108,7 +157,7 @@
                     Welcome, <?= htmlspecialchars($user->getDisplayName()) ?>
                 </span>
                 <button type="button" class="btn btn-outline-light btn-sm" 
-                        data-bs-toggle="modal" data-bs-target="#logoutModal">
+                        data-bs-toggle="modal" data-bs-target="#logoutModalUsers">
                     <i class="bi bi-box-arrow-right me-1"></i>Logout
                 </button>
             </div>
@@ -191,6 +240,7 @@
             </div>
         </div>
         
+        
         <!-- Users Table -->
         <div class="row">
             <div class="col-12">
@@ -230,8 +280,8 @@
                                                value="<?= htmlspecialchars($_GET['search'] ?? '') ?>" style="font-size: 11px;">
                                     </div>
                                     <div class="col-md-2">
-                                        <label for="role" class="form-label">Role</label>
-                                        <select class="form-select" id="role" name="role" style="font-size: 11px;">
+                                        <label for="role_filter" class="form-label">Role</label>
+                                        <select class="form-select" id="role_filter" name="role" style="font-size: 11px;">
                                             <option value="">All Roles</option>
                                             <option value="admin" <?= ($_GET['role'] ?? '') === 'admin' ? 'selected' : '' ?>>Admin</option>
                                             <option value="instructor" <?= ($_GET['role'] ?? '') === 'instructor' ? 'selected' : '' ?>>Instructor</option>
@@ -484,7 +534,6 @@
             </div>
         </div>
     </div>
-    
     <!-- Assign Section Modal -->
     <div class="modal fade" id="assignSectionModal" tabindex="-1" aria-labelledby="assignSectionModalLabel" aria-hidden="true">
         <div class="modal-dialog">
@@ -526,11 +575,11 @@
     </div>
     
     <!-- Logout Confirmation Modal -->
-    <div class="modal fade" id="logoutModal" tabindex="-1" aria-labelledby="logoutModalLabel" aria-hidden="true">
+    <div class="modal fade" id="logoutModalUsers" tabindex="-1" aria-labelledby="logoutModalUsersLabel" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="logoutModalLabel">
+                    <h5 class="modal-title" id="logoutModalUsersLabel">
                         <i class="bi bi-box-arrow-right me-2"></i>Confirm Logout
                     </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -552,7 +601,44 @@
     </div>
   
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="../js/modal-fix.js"></script>
+    <script>
+        // Fix modal backdrop overlay issue
+        document.addEventListener('show.bs.modal', function(e) {
+            // Remove all existing backdrops before opening
+            const existingBackdrops = document.querySelectorAll('.modal-backdrop');
+            existingBackdrops.forEach(backdrop => backdrop.remove());
+        });
+        
+        document.addEventListener('shown.bs.modal', function(e) {
+            // Remove ALL backdrops completely
+            const backdrops = document.querySelectorAll('.modal-backdrop');
+            backdrops.forEach(backdrop => backdrop.remove());
+            
+            // Ensure modal and content are clickable
+            const modal = e.target;
+            modal.style.zIndex = '1070';
+            modal.style.pointerEvents = 'auto';
+            
+            const modalContent = modal.querySelector('.modal-content');
+            if (modalContent) {
+                modalContent.style.pointerEvents = 'auto';
+                modalContent.style.zIndex = '1070';
+            }
+            
+            // Fix cursor behavior for all form elements
+            const inputs = modal.querySelectorAll('input, textarea, select');
+            inputs.forEach(input => {
+                input.style.pointerEvents = 'auto';
+                input.style.cursor = 'text';
+            });
+            
+            const buttons = modal.querySelectorAll('button, a');
+            buttons.forEach(button => {
+                button.style.pointerEvents = 'auto';
+                button.style.cursor = 'pointer';
+            });
+        });
+    </script>
     <script>
         // Assign Section Modal
         document.getElementById('assignSectionModal').addEventListener('show.bs.modal', function (event) {
@@ -657,6 +743,8 @@
             }
         });
     </script>
+    
+    
      </main>
 </body>
 </html>

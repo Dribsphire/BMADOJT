@@ -387,7 +387,7 @@ $activity_logs = $stmt->fetchAll();
                             <div class="col-sm-8">
                                 <div class="d-flex align-items-center gap-3">
                                     <div class="total-hours-display">
-                                        <span class="hours-number"><?= number_format($attendance_summary['total_hours'], 1) ?></span>
+                                        <span class="hours-number" style="color: white!important;"><?= number_format($attendance_summary['total_hours'], 1) ?></span>
                                         <span class="hours-label">hours</span>
                                     </div>
                                     <div class="progress-container">

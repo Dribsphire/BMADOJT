@@ -1,0 +1,13 @@
+/**
+ * Minimal Modal Fix CSS
+ * Only fixes z-index without interfering with Bootstrap
+ */
+
+/* Just fix the z-index stacking */
+.modal-backdrop {
+    z-index: 1040 !important;
+}
+
+.modal {
+    z-index: 1055 !important;
+}

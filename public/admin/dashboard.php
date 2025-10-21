@@ -274,7 +274,7 @@ $atRiskPercentage = $totalStudents > 0 ? round(($atRiskCount / $totalStudents) *
                     <i class="bi bi-person me-1"></i>My Profile
                 </a>
                 <button type="button" class="btn btn-outline-light btn-sm" 
-                        data-bs-toggle="modal" data-bs-target="#logoutModal">
+                        data-bs-toggle="modal" data-bs-target="#logoutModalDashboard">
                     <i class="bi bi-box-arrow-right me-1"></i>Logout
                 </button>
             </div>
@@ -632,11 +632,11 @@ $atRiskPercentage = $totalStudents > 0 ? round(($atRiskCount / $totalStudents) *
     </div>
     
     <!-- Logout Confirmation Modal -->
-    <div class="modal fade" id="logoutModal" tabindex="-1" aria-labelledby="logoutModalLabel" aria-hidden="true">
+    <div class="modal fade" id="logoutModalDashboard" tabindex="-1" aria-labelledby="logoutModalDashboardLabel" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="logoutModalLabel">
+                    <h5 class="modal-title" id="logoutModalDashboardLabel">
                         <i class="bi bi-box-arrow-right me-2"></i>Confirm Logout
                     </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -658,6 +658,5 @@ $atRiskPercentage = $totalStudents > 0 ? round(($atRiskCount / $totalStudents) *
     </div>
     </main>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="../js/modal-fix.js"></script>
 </body>
 </html>

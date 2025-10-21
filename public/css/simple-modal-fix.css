@@ -1,0 +1,14 @@
+/**
+ * Simple Modal Fix CSS
+ * Just fixes the basic z-index issue
+ */
+
+/* Ensure backdrop is behind modal */
+.modal-backdrop {
+    z-index: 1040 !important;
+}
+
+/* Ensure modal is above backdrop */
+.modal {
+    z-index: 1055 !important;
+}

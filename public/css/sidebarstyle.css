@@ -200,7 +200,7 @@ main {
     bottom: 0;
     left: 0;
     right: 0;
-    z-index: 1000; /* High z-index to stay on top */
+    z-index: 1000; /* Well below modals but above content */
     background-color: var(--base-clr);
     box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
     pointer-events: auto;
@@ -368,6 +368,6 @@ main {
   /* Ensure sidebar is above content but below modals */
   #sidebar {
     position: fixed !important;
-    z-index: 1040 !important; /* Below Bootstrap modals (1050) but above content */
+    z-index: 1000 !important; /* Well below Bootstrap modals (1050) but above content */
   }
 }
