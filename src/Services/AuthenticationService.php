@@ -45,7 +45,7 @@ class AuthenticationService
         if ($user->isInstructor() && !$user->section_id) {
             // Store the user in session for no-section page
             $this->startSession($user);
-            header('Location: /bmadOJT/public/instructor/no-section.php');
+            header('Location: instructor/no-section.php');
             exit;
         }
         
@@ -54,7 +54,7 @@ class AuthenticationService
             if (!$this->checkStudentCompliance($user)) {
                 // Store the user in session for incomplete profile page
                 $this->startSession($user);
-                header('Location: /bmadOJT/public/student/profile.php');
+                header('Location: student/profile.php');
                 exit;
             }
         }

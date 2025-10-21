@@ -93,7 +93,7 @@ class EmailService
                 <p>Please log in to your OJT Route account to download and complete this document.</p>
                 
                 <div style='margin: 20px 0;'>
-                    <a href='http://localhost/bmadOJT/public/student/documents.php' 
+                    <a href='https://ojtroute.ccs-chmsualijis.com/bmadOJT/public/student/documents.php' 
                        style='background: #0ea539; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;'>
                         View Documents
                     </a>
@@ -167,7 +167,7 @@ class EmailService
                 <p>Please log in to your OJT Route account to view the full details.</p>
                 
                 <div style='margin: 20px 0;'>
-                    <a href='http://localhost/bmadOJT/public/student/documents.php' 
+                    <a href='https://ojtroute.ccs-chmsualijis.com/bmadOJT/public/student/documents.php' 
                        style='background: #0ea539; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;'>
                         View Documents
                     </a>
