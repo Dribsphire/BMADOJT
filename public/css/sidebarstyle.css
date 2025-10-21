@@ -365,9 +365,9 @@ main {
     box-sizing: border-box;
   }
   
-  /* Ensure sidebar is always on top */
+  /* Ensure sidebar is above content but below modals */
   #sidebar {
     position: fixed !important;
-    z-index: 9999 !important;
+    z-index: 1040 !important; /* Below Bootstrap modals (1050) but above content */
   }
 }
