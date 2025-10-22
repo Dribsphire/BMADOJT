@@ -224,9 +224,51 @@ $atRiskPercentage = $totalStudents > 0 ? round(($atRiskCount / $totalStudents) *
             line-height: 1.2;
         }
         
-        .welcome-card {
-            background: white;
-            border-left: 4px solid var(--chmsu-green);
+        /* Top Banner Section */
+        .top-banner {
+            background: #0ea539;
+            color: white;
+            padding: 2rem 0;
+            position: relative;
+            overflow: hidden;
+            border-radius: 10px;
+        }
+
+        .welcome-message {
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            color: white;
+            margin-left: 1rem;
+        }
+        
+        .admin-info {
+            display: flex;
+            gap: 1rem;
+            margin-left: 1rem;
+        }
+        
+        .info-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .info-item i {
+            font-size: 1.2rem;
+        }
+        
+        .chmsu-logo {
+            height: 500px;
+            width: auto;
+        }
+        
+        .logo-info {
+            align-items: center;
+            width: 100px;
+            height: 100px;
+            object-fit: contain;
+            display: flex;
         }
         
         /* Management cards equal height */
@@ -255,31 +297,54 @@ $atRiskPercentage = $totalStudents > 0 ? round(($atRiskCount / $totalStudents) *
             flex: 1;
             margin-bottom: 1rem;
         }
+        
+        /* Mobile Responsive for Top Banner */
+        @media (max-width: 768px) {
+            .top-banner {
+                background: #0ea539;
+                color: white;
+                padding: 1rem;
+                position: relative;
+                overflow: hidden;
+                border-radius: 10px;
+                height: 120px;
+                display: flex;
+                align-items: center;
+            }
+            
+            .top-banner img {
+                position: absolute;
+                right: -50px;
+                top: 50%;
+                transform: translateY(-50%);
+                height: 200px;
+                width: auto;
+                opacity: 0.3;
+                z-index: 1;
+            }
+            
+            .top-banner .container-fluid {
+                position: relative;
+                z-index: 2;
+                width: 100%;
+            }
+            
+            .welcome-message {
+                margin-left: 0;
+                font-size: 1.5rem;
+                font-weight: 700;
+                margin-top: 17rem;
+            }
+            
+            .admin-info {
+                display: none !important;
+            }
+        }
     </style>
 </head>
 <body>
     <?php include 'sidebar.php'; ?>
     <main>
-    <!-- Navigation -->
-    <nav class="navbar navbar-expand-lg navbar-dark">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="#">
-                <i class="bi bi-mortarboard me-2"></i>OJT Route
-            </a>
-            <div class="navbar-nav ms-auto">
-                <span class="navbar-text me-3">
-                    Welcome, <?= htmlspecialchars($user->getDisplayName()) ?>
-                </span>
-                <a class="nav-link me-2" href="profile.php">
-                    <i class="bi bi-person me-1"></i>My Profile
-                </a>
-                <button type="button" class="btn btn-outline-light btn-sm" 
-                        data-bs-toggle="modal" data-bs-target="#logoutModalDashboard">
-                    <i class="bi bi-box-arrow-right me-1"></i>Logout
-                </button>
-            </div>
-        </div>
-    </nav>
     
     <!-- Main Content -->
     <div class="container-fluid py-4">
@@ -291,18 +356,25 @@ $atRiskPercentage = $totalStudents > 0 ? round(($atRiskCount / $totalStudents) *
             </div>
         </div>
         
-        <!-- Welcome Card -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="card welcome-card">
-                    <div class="card-body">
-                        <h5 class="card-title">
-                            <i class="bi bi-house-door me-2"></i>Welcome back, System Administrator!
-                        </h5>
-                        <p class="card-text">
-                            You are logged in as <strong><?= htmlspecialchars($user->getRoleDisplayName()) ?></strong>. 
-                            Monitor and manage the OJT system from this dashboard.
-                        </p>
+        <!-- Top Banner Section -->
+        <div class="top-banner">
+            <div class="container-fluid">
+                <div class="row align-items-center">
+                    <div class="col-md-10">
+                        <div class="welcome-message">Welcome back, <?= htmlspecialchars($user->full_name ?? 'Administrator') ?>!</div>
+                        <div class="admin-info">
+                            <div class="info-item">
+                                <i class="bi bi-shield-check" style="color: white;"></i>
+                                <span style="color: white;">Role: <?= htmlspecialchars($user->getRoleDisplayName()) ?></span>
+                            </div>
+                            <div class="info-item">
+                                <i class="bi bi-gear" style="color: white;"></i>
+                                <span style="color: white;">System Administrator</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="logo-info">
+                        <img src="../images/CHMSU.png" alt="CHMSU Logo" class="chmsu-logo">
                     </div>
                 </div>
             </div>
@@ -597,40 +669,6 @@ $atRiskPercentage = $totalStudents > 0 ? round(($atRiskCount / $totalStudents) *
             </div>
         </div>
         
-        <!-- System Status -->
-        <div class="row">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">
-                            <i class="bi bi-info-circle me-2"></i>System Status
-                        </h5>
-                        <div class="row">
-                            <div class="col-md-4">
-                                <div class="d-flex align-items-center">
-                                    <i class="bi bi-check-circle text-success me-2"></i>
-                                    <span>Database Connected</span>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="d-flex align-items-center">
-                                    <i class="bi bi-check-circle text-success me-2"></i>
-                                    <span>Authentication Active</span>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="d-flex align-items-center">
-                                    <i class="bi bi-check-circle text-success me-2"></i>
-                                    <span>System Ready</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    
     <!-- Logout Confirmation Modal -->
     <div class="modal fade" id="logoutModalDashboard" tabindex="-1" aria-labelledby="logoutModalDashboardLabel" aria-hidden="true">
         <div class="modal-dialog">
