@@ -38,7 +38,9 @@ class InstructorDocumentController
         string $dateFrom = '',
         string $dateTo = '',
         string $sortBy = 'submitted_at',
-        string $sortOrder = 'DESC'
+        string $sortOrder = 'DESC',
+        int $page = 1,
+        int $perPage = 10
     ): array {
         // Check authentication
         if (!$this->authMiddleware->check()) {
@@ -57,7 +59,9 @@ class InstructorDocumentController
             $dateFrom,
             $dateTo,
             $sortBy,
-            $sortOrder
+            $sortOrder,
+            $page,
+            $perPage
         );
     }
 
@@ -79,7 +83,7 @@ class InstructorDocumentController
     }
 
     /**
-     * Approve document
+     * Approve document or report
      */
     public function approveDocument(int $submissionId, int $instructorId, string $feedback = ''): array
     {
@@ -93,7 +97,22 @@ class InstructorDocumentController
                 $this->authMiddleware->redirectToUnauthorized();
             }
 
-            // Update submission status
+            // Get instructor's section
+            $stmt = $this->pdo->prepare("
+                SELECT COALESCE(
+                    (SELECT section_id FROM instructor_sections WHERE instructor_id = ? LIMIT 1),
+                    (SELECT section_id FROM users WHERE id = ? AND role = 'instructor'),
+                    (SELECT id FROM sections WHERE instructor_id = ? LIMIT 1)
+                ) as section_id
+            ");
+            $stmt->execute([$instructorId, $instructorId, $instructorId]);
+            $instructor = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$instructor || !$instructor['section_id']) {
+                throw new Exception('Instructor section not found');
+            }
+
+            // Try to update in student_documents first
             $stmt = $this->pdo->prepare("
                 UPDATE student_documents 
                 SET status = 'approved', 
@@ -101,18 +120,40 @@ class InstructorDocumentController
                     reviewed_at = NOW(), 
                     updated_at = NOW()
                 WHERE id = ? AND student_id IN (
-                    SELECT id FROM users WHERE section_id = (
-                        SELECT section_id FROM users WHERE id = ?
-                    )
+                    SELECT id FROM users WHERE section_id = ?
                 )
             ");
-            $stmt->execute([$feedback, $submissionId, $instructorId]);
+            $stmt->execute([$feedback, $submissionId, $instructor['section_id']]);
+            $updated = $stmt->rowCount() > 0;
 
-            if ($stmt->rowCount() === 0) {
+            // If not found in student_documents, try student_reports
+            if (!$updated) {
+                $stmt = $this->pdo->query("SHOW TABLES LIKE 'student_reports'");
+                $reportsTableExists = $stmt->rowCount() > 0;
+                
+                if ($reportsTableExists) {
+                    $stmt = $this->pdo->prepare("
+                        UPDATE student_reports 
+                        SET status = 'approved', 
+                            instructor_feedback = ?, 
+                            reviewed_at = NOW(), 
+                            reviewed_by = ?,
+                            updated_at = NOW()
+                        WHERE id = ? AND student_id IN (
+                            SELECT id FROM users WHERE section_id = ?
+                        )
+                    ");
+                    $stmt->execute([$feedback, $instructorId, $submissionId, $instructor['section_id']]);
+                    $updated = $stmt->rowCount() > 0;
+                }
+            }
+
+            if (!$updated) {
                 throw new Exception('Submission not found or access denied');
             }
 
             // Get submission details for email notification
+            // Try student_documents first
             $stmt = $this->pdo->prepare("
                 SELECT sd.*, d.document_name, d.document_type, u.full_name as student_name, u.email as student_email
                 FROM student_documents sd
@@ -122,6 +163,20 @@ class InstructorDocumentController
             ");
             $stmt->execute([$submissionId]);
             $submission = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            // If not found, try student_reports
+            if (!$submission) {
+                $stmt = $this->pdo->prepare("
+                    SELECT sr.*, 
+                           CONCAT(UCASE(LEFT(sr.report_type, 1)), SUBSTRING(sr.report_type, 2), ' Report') as document_name,
+                           u.full_name as student_name, u.email as student_email
+                    FROM student_reports sr
+                    JOIN users u ON sr.student_id = u.id
+                    WHERE sr.id = ?
+                ");
+                $stmt->execute([$submissionId]);
+                $submission = $stmt->fetch(PDO::FETCH_ASSOC);
+            }
 
             // Send email notification
             if ($submission) {
@@ -134,7 +189,7 @@ class InstructorDocumentController
             }
 
             // Log activity
-            $this->logActivity($instructorId, 'approve_document', "Approved document submission ID: {$submissionId}");
+            $this->logActivity($instructorId, 'approve_document', "Approved submission ID: {$submissionId}");
 
             return [
                 'success' => true,
@@ -168,7 +223,22 @@ class InstructorDocumentController
                 throw new Exception('Feedback is required when requesting revision');
             }
 
-            // Update submission status
+            // Get instructor's section
+            $stmt = $this->pdo->prepare("
+                SELECT COALESCE(
+                    (SELECT section_id FROM instructor_sections WHERE instructor_id = ? LIMIT 1),
+                    (SELECT section_id FROM users WHERE id = ? AND role = 'instructor'),
+                    (SELECT id FROM sections WHERE instructor_id = ? LIMIT 1)
+                ) as section_id
+            ");
+            $stmt->execute([$instructorId, $instructorId, $instructorId]);
+            $instructor = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$instructor || !$instructor['section_id']) {
+                throw new Exception('Instructor section not found');
+            }
+
+            // Try to update in student_documents first
             $stmt = $this->pdo->prepare("
                 UPDATE student_documents 
                 SET status = 'revision_required', 
@@ -176,18 +246,40 @@ class InstructorDocumentController
                     reviewed_at = NOW(), 
                     updated_at = NOW()
                 WHERE id = ? AND student_id IN (
-                    SELECT id FROM users WHERE section_id = (
-                        SELECT section_id FROM users WHERE id = ?
-                    )
+                    SELECT id FROM users WHERE section_id = ?
                 )
             ");
-            $stmt->execute([$feedback, $submissionId, $instructorId]);
+            $stmt->execute([$feedback, $submissionId, $instructor['section_id']]);
+            $updated = $stmt->rowCount() > 0;
 
-            if ($stmt->rowCount() === 0) {
+            // If not found in student_documents, try student_reports
+            if (!$updated) {
+                $stmt = $this->pdo->query("SHOW TABLES LIKE 'student_reports'");
+                $reportsTableExists = $stmt->rowCount() > 0;
+                
+                if ($reportsTableExists) {
+                    $stmt = $this->pdo->prepare("
+                        UPDATE student_reports 
+                        SET status = 'revision_required', 
+                            instructor_feedback = ?, 
+                            reviewed_at = NOW(), 
+                            reviewed_by = ?,
+                            updated_at = NOW()
+                        WHERE id = ? AND student_id IN (
+                            SELECT id FROM users WHERE section_id = ?
+                        )
+                    ");
+                    $stmt->execute([$feedback, $instructorId, $submissionId, $instructor['section_id']]);
+                    $updated = $stmt->rowCount() > 0;
+                }
+            }
+
+            if (!$updated) {
                 throw new Exception('Submission not found or access denied');
             }
 
             // Get submission details for email notification
+            // Try student_documents first
             $stmt = $this->pdo->prepare("
                 SELECT sd.*, d.document_name, d.document_type, u.full_name as student_name, u.email as student_email
                 FROM student_documents sd
@@ -197,6 +289,20 @@ class InstructorDocumentController
             ");
             $stmt->execute([$submissionId]);
             $submission = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            // If not found, try student_reports
+            if (!$submission) {
+                $stmt = $this->pdo->prepare("
+                    SELECT sr.*, 
+                           CONCAT(UCASE(LEFT(sr.report_type, 1)), SUBSTRING(sr.report_type, 2), ' Report') as document_name,
+                           u.full_name as student_name, u.email as student_email
+                    FROM student_reports sr
+                    JOIN users u ON sr.student_id = u.id
+                    WHERE sr.id = ?
+                ");
+                $stmt->execute([$submissionId]);
+                $submission = $stmt->fetch(PDO::FETCH_ASSOC);
+            }
 
             // Send email notification
             if ($submission) {
@@ -225,7 +331,7 @@ class InstructorDocumentController
     }
 
     /**
-     * Reject document
+     * Reject document or report
      */
     public function rejectDocument(int $submissionId, int $instructorId, string $feedback): array
     {
@@ -243,7 +349,22 @@ class InstructorDocumentController
                 throw new Exception('Feedback is required when rejecting document');
             }
 
-            // Update submission status
+            // Get instructor's section
+            $stmt = $this->pdo->prepare("
+                SELECT COALESCE(
+                    (SELECT section_id FROM instructor_sections WHERE instructor_id = ? LIMIT 1),
+                    (SELECT section_id FROM users WHERE id = ? AND role = 'instructor'),
+                    (SELECT id FROM sections WHERE instructor_id = ? LIMIT 1)
+                ) as section_id
+            ");
+            $stmt->execute([$instructorId, $instructorId, $instructorId]);
+            $instructor = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$instructor || !$instructor['section_id']) {
+                throw new Exception('Instructor section not found');
+            }
+
+            // Try to update in student_documents first
             $stmt = $this->pdo->prepare("
                 UPDATE student_documents 
                 SET status = 'rejected', 
@@ -251,18 +372,40 @@ class InstructorDocumentController
                     reviewed_at = NOW(), 
                     updated_at = NOW()
                 WHERE id = ? AND student_id IN (
-                    SELECT id FROM users WHERE section_id = (
-                        SELECT section_id FROM users WHERE id = ?
-                    )
+                    SELECT id FROM users WHERE section_id = ?
                 )
             ");
-            $stmt->execute([$feedback, $submissionId, $instructorId]);
+            $stmt->execute([$feedback, $submissionId, $instructor['section_id']]);
+            $updated = $stmt->rowCount() > 0;
 
-            if ($stmt->rowCount() === 0) {
+            // If not found in student_documents, try student_reports
+            if (!$updated) {
+                $stmt = $this->pdo->query("SHOW TABLES LIKE 'student_reports'");
+                $reportsTableExists = $stmt->rowCount() > 0;
+                
+                if ($reportsTableExists) {
+                    $stmt = $this->pdo->prepare("
+                        UPDATE student_reports 
+                        SET status = 'rejected', 
+                            instructor_feedback = ?, 
+                            reviewed_at = NOW(), 
+                            reviewed_by = ?,
+                            updated_at = NOW()
+                        WHERE id = ? AND student_id IN (
+                            SELECT id FROM users WHERE section_id = ?
+                        )
+                    ");
+                    $stmt->execute([$feedback, $instructorId, $submissionId, $instructor['section_id']]);
+                    $updated = $stmt->rowCount() > 0;
+                }
+            }
+
+            if (!$updated) {
                 throw new Exception('Submission not found or access denied');
             }
 
             // Get submission details for email notification
+            // Try student_documents first
             $stmt = $this->pdo->prepare("
                 SELECT sd.*, d.document_name, d.document_type, u.full_name as student_name, u.email as student_email
                 FROM student_documents sd
@@ -272,6 +415,20 @@ class InstructorDocumentController
             ");
             $stmt->execute([$submissionId]);
             $submission = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            // If not found, try student_reports
+            if (!$submission) {
+                $stmt = $this->pdo->prepare("
+                    SELECT sr.*, 
+                           CONCAT(UCASE(LEFT(sr.report_type, 1)), SUBSTRING(sr.report_type, 2), ' Report') as document_name,
+                           u.full_name as student_name, u.email as student_email
+                    FROM student_reports sr
+                    JOIN users u ON sr.student_id = u.id
+                    WHERE sr.id = ?
+                ");
+                $stmt->execute([$submissionId]);
+                $submission = $stmt->fetch(PDO::FETCH_ASSOC);
+            }
 
             // Send email notification
             if ($submission) {
@@ -284,7 +441,7 @@ class InstructorDocumentController
             }
 
             // Log activity
-            $this->logActivity($instructorId, 'reject_document', "Rejected document submission ID: {$submissionId}");
+            $this->logActivity($instructorId, 'reject_document', "Rejected submission ID: {$submissionId}");
 
             return [
                 'success' => true,

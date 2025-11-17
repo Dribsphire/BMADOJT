@@ -128,95 +128,39 @@ $output = fopen('php://output', 'w');
 // Add BOM for UTF-8 to ensure proper encoding in Excel
 fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
 
-// CSV Headers
+// CSV Headers - Only requested columns
 $headers = [
-    'School ID',
+    'Student ID',
     'Full Name',
-    'Email',
-    'Contact',
-    'Workplace Name',
-    'Supervisor Name',
-    'Student Position',
-    'OJT Start Date',
-    'Status',
-    'Total Accumulated Hours',
-    'Attendance Records Count',
-    'First Attendance Date',
-    'Last Attendance Date'
+    'Workplace',
+    'Supervisor',
+    'Student Position'
 ];
 
 fputcsv($output, $headers);
 
-// Add section information as metadata
-fputcsv($output, []); // Empty row
-fputcsv($output, ['Section Information']);
-fputcsv($output, ['Section Code', $section->section_code]);
-fputcsv($output, ['Section Name', $section->section_name]);
-fputcsv($output, ['Export Date', date('Y-m-d H:i:s')]);
-fputcsv($output, ['Total Students', count($students)]);
-fputcsv($output, []); // Empty row
-
-// Add filter information if any filters were applied
-if (!empty($search) || !empty($status_filter)) {
-    fputcsv($output, ['Applied Filters']);
-    if (!empty($search)) {
-        fputcsv($output, ['Search Term', $search]);
-    }
-    if (!empty($status_filter)) {
-        fputcsv($output, ['Status Filter', ucfirst(str_replace('_', ' ', $status_filter))]);
-    }
-    fputcsv($output, []); // Empty row
-}
-
-// Add data rows
+// Add data rows - Only requested columns
 foreach ($students as $student) {
     $row = [
-        $student['school_id'],
-        $student['full_name'],
-        $student['email'],
-        $student['contact'] ?? '',
+        $student['school_id'] ?? '',
+        $student['full_name'] ?? '',
         $student['workplace_name'] ?? '',
         $student['supervisor_name'] ?? '',
-        $student['student_position'] ?? '',
-        $student['ojt_start_date'] ?? '',
-        ucfirst(str_replace('_', ' ', $student['status'] ?? 'on_track')),
-        number_format($student['total_accumulated_hours'], 2),
-        $student['attendance_records_count'],
-        $student['first_attendance_date'] ? date('Y-m-d', strtotime($student['first_attendance_date'])) : '',
-        $student['last_attendance_date'] ? date('Y-m-d', strtotime($student['last_attendance_date'])) : ''
+        $student['student_position'] ?? ''
     ];
     
     fputcsv($output, $row);
 }
 
-// Add summary statistics
+// Add summary at the bottom
 fputcsv($output, []); // Empty row
-fputcsv($output, ['Summary Statistics']);
 
-if (!empty($students)) {
-    $total_hours = array_sum(array_column($students, 'total_accumulated_hours'));
-    $avg_hours = $total_hours / count($students);
-    $max_hours = max(array_column($students, 'total_accumulated_hours'));
-    $min_hours = min(array_column($students, 'total_accumulated_hours'));
-    
-    fputcsv($output, ['Total Hours (All Students)', number_format($total_hours, 2)]);
-    fputcsv($output, ['Average Hours per Student', number_format($avg_hours, 2)]);
-    fputcsv($output, ['Highest Hours', number_format($max_hours, 2)]);
-    fputcsv($output, ['Lowest Hours', number_format($min_hours, 2)]);
-    
-    // Status breakdown
-    $status_counts = [];
-    foreach ($students as $student) {
-        $status = $student['status'] ?? 'on_track';
-        $status_counts[$status] = ($status_counts[$status] ?? 0) + 1;
-    }
-    
-    fputcsv($output, []); // Empty row
-    fputcsv($output, ['Status Breakdown']);
-    foreach ($status_counts as $status => $count) {
-        fputcsv($output, [ucfirst(str_replace('_', ' ', $status)), $count]);
-    }
-}
+// Get current calendar year (e.g., 2025, 2024)
+$calendarYear = date('Y');
+
+// Add summary information
+fputcsv($output, ['Total Students', count($students)]);
+fputcsv($output, ['Year', $calendarYear]);
 
 fclose($output);
 exit;

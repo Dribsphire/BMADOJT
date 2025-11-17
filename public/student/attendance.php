@@ -138,6 +138,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $geolocationService = new GeolocationService($pdo);
                 $result = $geolocationService->verifyAttendanceLocation($_SESSION['user_id'], $latitude, $longitude);
                 
+                // Get workplace location for map
+                $stmt = $pdo->prepare("
+                    SELECT sp.workplace_latitude, sp.workplace_longitude, sp.workplace_name
+                    FROM student_profiles sp
+                    WHERE sp.user_id = ? AND sp.workplace_latitude IS NOT NULL AND sp.workplace_longitude IS NOT NULL
+                ");
+                $stmt->execute([$_SESSION['user_id']]);
+                $workplace = $stmt->fetch(PDO::FETCH_ASSOC);
+                
+                if ($workplace) {
+                    $result['workplace'] = [
+                        'latitude' => (float)$workplace['workplace_latitude'],
+                        'longitude' => (float)$workplace['workplace_longitude'],
+                        'name' => $workplace['workplace_name']
+                    ];
+                    $result['radius'] = 40; // Default radius in meters
+                }
+                
                 // Clear any output buffer before sending JSON
                 while (ob_get_level()) {
                     ob_end_clean();
@@ -230,6 +248,8 @@ if (isset($data['error'])) {
     <link rel="icon" type="image/png" href="../images/CHMSU.png">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root {
             --chmsu-green: #0ea539;
@@ -323,129 +343,289 @@ if (isset($data['error'])) {
                 margin-bottom: 0.5rem;
             }
         }
+        
+        /* Map Styles */
+        #locationMap {
+            height: 500px;
+            width: 100%;
+            border-radius: 8px;
+            z-index: 1;
+        }
+        
+        .map-container {
+            position: relative;
+            margin-bottom: 1rem;
+        }
+        
+        .map-info {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 1000;
+            font-size: 0.85rem;
+        }
+        
+        .map-info .badge {
+            font-size: 0.75rem;
+        }
+        
+        /* Attendance Cards Overlay */
+        .attendance-cards-overlay {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            width: 320px;
+            max-height: calc(100% - 20px);
+            overflow-y: auto;
+            z-index: 1000;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            padding: 1rem;
+        }
+        
+        .attendance-cards-overlay::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        .attendance-cards-overlay::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 3px;
+        }
+        
+        .attendance-cards-overlay::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 3px;
+        }
+        
+        .attendance-cards-overlay::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        
+        .attendance-cards-overlay .attendance-card {
+            margin-bottom: 1rem;
+        }
+        
+        .attendance-cards-overlay .attendance-card:last-child {
+            margin-bottom: 0;
+        }
+        
+        @media (max-width: 768px) {
+            .attendance-cards-overlay {
+                position: relative;
+                width: 100%;
+                max-height: none;
+                top: 0;
+                left: 0;
+                margin-top: 1rem;
+                box-shadow: none;
+                border-radius: 0;
+                padding: 0.5rem;
+            }
+            
+            #locationMap {
+                height: 400px;
+            }
+        }
+        
+        .location-status-card {
+            border-left: 4px solid;
+        }
+        
+        .location-status-card.valid {
+            border-left-color: #28a745;
+        }
+        
+        .location-status-card.invalid {
+            border-left-color: #dc3545;
+        }
+        
+        .location-status-card.checking {
+            border-left-color: #ffc107;
+        }
+        
+        /* Modern Alert Styles */
+        .location-alert {
+            border: none;
+            border-radius: 12px;
+            padding: 1rem 1.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            transition: all 0.3s ease;
+        }
+        
+        .location-alert.success {
+            background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+            color: #155724;
+        }
+        
+        .location-alert.danger {
+            background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
+            color: #721c24;
+        }
+        
+        .location-alert.warning {
+            background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+            color: #856404;
+        }
+        
+        .location-alert.info {
+            background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%);
+            color: #0c5460;
+        }
+        
+        .location-alert .alert-icon {
+            font-size: 1.5rem;
+            flex-shrink: 0;
+        }
+        
+        .location-alert .alert-content {
+            flex: 1;
+            font-weight: 500;
+        }
+        
+        .location-alert .alert-distance {
+            font-weight: 600;
+            font-size: 0.95rem;
+            margin-top: 0.25rem;
+            opacity: 0.9;
+        }
     </style>
 </head>
 <body>
     <?php include 'student-sidebar.php'; ?>
     
     <main>
-        <!-- Location Status -->
-        <div class="row mb-3">
+        <!-- Location Status and Map -->
+        <div class="row mb-4">
             <div class="col-12">
-                <div id="locationStatus" class="alert alert-warning">
-                    <i class="bi bi-geo-alt me-2"></i>
-                    <span id="locationMessage">Checking your location...</span>
-                    <button class="btn btn-sm btn-outline-primary ms-2" onclick="checkLocation()">
-                        <i class="bi bi-arrow-clockwise"></i> Check Location
-                    </button>
+                <div class="card location-status-card checking" id="locationStatusCard">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0">
+                        <div id="locationStatus" class="location-alert warning mb-3">
+                            <i class="bi bi-hourglass-split alert-icon"></i>
+                            <div class="alert-content">
+                                <div id="locationMessage">Checking your location...</div>
+                                <div id="locationDistance" class="alert-distance" style="display: none;"></div>
+                            </div>
+                        </div>
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        
+                        <br>
+                        <!-- Map Container -->
+                        <div class="map-container">
+                            <div id="locationMap"></div>
+                            <div class="map-info" id="mapInfo" style="display: none;">
+                                <div class="mb-2">
+                                    <strong>Distance:</strong> 
+                                    <span id="distanceDisplay" class="badge bg-secondary">-</span>
+                                </div>
+                                <div>
+                                    <strong>Status:</strong> 
+                                    <span id="statusBadge" class="badge bg-warning">Checking...</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Attendance Cards Overlay -->
+                            <div class="attendance-cards-overlay">
+                                <?php if (!isset($error_message)): ?>
+                                    <!-- Current Time -->
+                                    <div class="card mb-3">
+                                        <div class="card-body text-center p-2">
+                                            <small class="text-muted d-block mb-1">
+                                                <i class="bi bi-calendar-event"></i> Current Time
+                                            </small>
+                                            <div class="time-display text-primary" id="current-time" style="font-size: 0.9rem;">
+                                                <?= date('Y-m-d g:i:s A') ?>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Attendance Blocks -->
+                                    <?php foreach ($attendanceStatus as $blockKey => $block): ?>
+                                    <div class="card attendance-card block-<?= $blockKey ?> status-<?= $block['status'] ?>">
+                                        <div class="card-header d-flex justify-content-between align-items-center p-2">
+                                            <h6 class="mb-0" style="font-size: 0.85rem;">
+                                                <i class="bi bi-<?= $block['icon'] ?> me-1"></i>
+                                                <?= $block['name'] ?>
+                                            </h6>
+                                            <span class="badge bg-<?= $block['color'] ?>" style="font-size: 0.7rem;"><?= ucfirst($block['status']) ?></span>
+                                        </div>
+                                        <div class="card-body p-2">
+                                            <div class="mb-2">
+                                                <small class="text-muted" style="font-size: 0.7rem;">Time Range:</small><br>
+                                                <strong style="font-size: 0.8rem;"><?= date('g:i A', strtotime($block['start_time'])) ?> - <?= date('g:i A', strtotime($block['end_time'])) ?></strong>
+                                            </div>
+                                            
+                                            <?php if ($block['time_in']): ?>
+                                            <div class="mb-2">
+                                                <small class="text-muted" style="font-size: 0.7rem;">Time In:</small><br>
+                                                <strong class="text-primary" style="font-size: 0.8rem;"><?= date('g:i:s A', strtotime($block['time_in'])) ?></strong>
+                                            </div>
+                                            <?php endif; ?>
+                                            
+                                            <?php if ($block['time_out']): ?>
+                                            <div class="mb-2">
+                                                <small class="text-muted" style="font-size: 0.7rem;">Time Out:</small><br>
+                                                <strong class="text-success" style="font-size: 0.8rem;"><?= date('g:i:s A', strtotime($block['time_out'])) ?></strong>
+                                            </div>
+                                            <?php endif; ?>
+                                            
+                                            <?php if ($block['total_hours'] > 0): ?>
+                                            <div class="mb-2">
+                                                <small class="text-muted" style="font-size: 0.7rem;">Hours:</small><br>
+                                                <strong class="text-info" style="font-size: 0.8rem;"><?= number_format($block['total_hours'], 2) ?>h</strong>
+                                            </div>
+                                            <?php endif; ?>
+                                            
+                                            <div class="d-grid gap-1 mt-2">
+                                                <?php if ($block['can_time_in']): ?>
+                                                <button class="btn btn-primary btn-sm btn-attendance" 
+                                                        onclick="timeIn('<?= $blockKey ?>')"
+                                                        style="font-size: 0.75rem; padding: 0.25rem 0.5rem;">
+                                                    <i class="bi bi-play-circle me-1"></i>Time In
+                                                </button>
+                                                <?php endif; ?>
+                                                
+                                                <?php if ($block['can_time_out']): ?>
+                                                <button class="btn btn-success btn-sm btn-attendance" 
+                                                        onclick="showTimeOutConfirmation('<?= $blockKey ?>')"
+                                                        style="font-size: 0.75rem; padding: 0.25rem 0.5rem;">
+                                                    <i class="bi bi-stop-circle me-1"></i>Time Out
+                                                </button>
+                                                <?php endif; ?>
+                                                
+                                                <?php if (!$block['can_time_in'] && !$block['can_time_out']): ?>
+                                                <button class="btn btn-secondary btn-sm btn-attendance" disabled
+                                                        style="font-size: 0.75rem; padding: 0.25rem 0.5rem;">
+                                                    <i class="bi bi-clock me-1"></i>
+                                                    <?= $block['status'] === 'completed' ? 'Completed' : 'Not Available' ?>
+                                                </button>
+                                                <?php endif; ?>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
-        <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-            <h1 class="h2">
-                <i class="bi bi-clock-history me-2"></i>Attendance
-            </h1>
-            <div class="btn-toolbar mb-2 mb-md-0">
-                <div class="btn-group me-2">
-                    <button type="button" class="btn btn-outline-secondary" onclick="refreshStatus()">
-                        <i class="bi bi-arrow-clockwise"></i> Refresh
-                    </button>
-                </div>
-            </div>
-        </div>
-
         <?php if (isset($error_message)): ?>
             <div class="alert alert-danger" role="alert">
                 <i class="bi bi-exclamation-triangle me-2"></i>
                 <?= htmlspecialchars($error_message) ?>
             </div>
-        <?php else: ?>
-
-        <!-- Current Time and Date -->
-        <div class="row mb-4">
-            <div class="col-md-12">
-                <div class="card">
-                    <div class="card-body text-center">
-                        <h5 class="card-title">
-                            <i class="bi bi-calendar-event me-2"></i>Current Date & Time
-                        </h5>
-                        <div class="time-display text-primary" id="current-time">
-                            <?= date('Y-m-d g:i:s A') ?>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Attendance Blocks -->
-        <div class="row">
-            <?php foreach ($attendanceStatus as $blockKey => $block): ?>
-            <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card attendance-card block-<?= $blockKey ?> status-<?= $block['status'] ?>">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h6 class="mb-0">
-                            <i class="bi bi-<?= $block['icon'] ?> me-2"></i>
-                            <?= $block['name'] ?>
-                        </h6>
-                        <span class="badge bg-<?= $block['color'] ?>"><?= ucfirst($block['status']) ?></span>
-                    </div>
-                    <div class="card-body">
-                        <div class="mb-3">
-                            <small class="text-muted">Time Range:</small><br>
-                            <strong><?= date('g:i A', strtotime($block['start_time'])) ?> - <?= date('g:i A', strtotime($block['end_time'])) ?></strong>
-                        </div>
-                        
-                        <?php if ($block['time_in']): ?>
-                        <div class="mb-2">
-                            <small class="text-muted">Time In:</small><br>
-                            <strong class="text-primary"><?= date('g:i:s A', strtotime($block['time_in'])) ?></strong>
-                        </div>
-                        <?php endif; ?>
-                        
-                        <?php if ($block['time_out']): ?>
-                        <div class="mb-2">
-                            <small class="text-muted">Time Out:</small><br>
-                            <strong class="text-success"><?= date('g:i:s A', strtotime($block['time_out'])) ?></strong>
-                        </div>
-                        <?php endif; ?>
-                        
-                        <?php if ($block['total_hours'] > 0): ?>
-                        <div class="mb-3">
-                            <small class="text-muted">Total Hours:</small><br>
-                            <strong class="text-info"><?= number_format($block['total_hours'], 2) ?> hours</strong>
-                        </div>
-                        <?php endif; ?>
-                        
-                        <div class="d-grid gap-2">
-                            <?php if ($block['can_time_in']): ?>
-                            <button class="btn btn-primary btn-attendance" 
-                                    onclick="timeIn('<?= $blockKey ?>')">
-                                <i class="bi bi-play-circle me-2"></i>Time In
-                            </button>
-                            <?php endif; ?>
-                            
-                            <?php if ($block['can_time_out']): ?>
-                            <button class="btn btn-success btn-attendance" 
-                                    onclick="showTimeOutConfirmation('<?= $blockKey ?>')">
-                                <i class="bi bi-stop-circle me-2"></i>Time Out
-                            </button>
-                            <?php endif; ?>
-                            
-                            <?php if (!$block['can_time_in'] && !$block['can_time_out']): ?>
-                            <button class="btn btn-secondary btn-attendance" disabled>
-                                <i class="bi bi-clock me-2"></i>
-                                <?= $block['status'] === 'completed' ? 'Completed' : 'Not Available' ?>
-                            </button>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <?php endforeach; ?>
-        </div>
-
-
-
         <?php endif; ?>
     </main>
 
@@ -501,9 +681,114 @@ if (isset($data['error'])) {
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="js/photo-capture.js"></script>
     <script src="js/photo-modal.js"></script>
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
         // Prevent double submissions
         let isProcessing = false;
+        
+        // Map variables
+        let map = null;
+        let currentMarker = null;
+        let workplaceMarker = null;
+        let radiusCircle = null;
+        let currentLocation = null;
+        let workplaceLocation = null;
+        let isWithinRadius = false;
+        
+        // Initialize map
+        function initMap() {
+            // Create map centered on Philippines
+            map = L.map('locationMap').setView([14.5995, 120.9842], 15);
+            
+            // Add OpenStreetMap tiles
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 19
+            }).addTo(map);
+        }
+        
+        // Update map with locations
+        function updateMap(studentLat, studentLon, workplaceLat, workplaceLon, distance, valid, workplaceName) {
+            if (!map) {
+                initMap();
+            }
+            
+            // Remove existing markers and circle
+            if (currentMarker) map.removeLayer(currentMarker);
+            if (workplaceMarker) map.removeLayer(workplaceMarker);
+            if (radiusCircle) map.removeLayer(radiusCircle);
+            
+            // Add workplace marker
+            if (workplaceLat && workplaceLon) {
+                workplaceLocation = { lat: workplaceLat, lon: workplaceLon };
+                
+                // Create red icon for workplace
+                const redIcon = L.divIcon({
+                    className: 'custom-marker',
+                    html: `<div style="background-color: #dc3545; width: 30px; height: 30px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 3px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3);"></div>`,
+                    iconSize: [30, 30],
+                    iconAnchor: [15, 30],
+                    popupAnchor: [0, -30]
+                });
+                
+                workplaceMarker = L.marker([workplaceLat, workplaceLon], { icon: redIcon }).addTo(map);
+                workplaceMarker.bindPopup(`<strong>${workplaceName || 'Workplace'}</strong><br>Your designated workplace location`);
+                
+                // Add radius circle (40 meters)
+                radiusCircle = L.circle([workplaceLat, workplaceLon], {
+                    color: valid ? '#28a745' : '#dc3545',
+                    fillColor: valid ? '#28a745' : '#dc3545',
+                    fillOpacity: 0.2,
+                    radius: 40,
+                    weight: 2
+                }).addTo(map);
+            }
+            
+            // Add student's current location marker
+            if (studentLat && studentLon) {
+                currentLocation = { lat: studentLat, lon: studentLon };
+                
+                // Create colored icon based on validity
+                const markerColor = valid ? '#28a745' : '#dc3545';
+                const currentIcon = L.divIcon({
+                    className: 'custom-marker',
+                    html: `<div style="background-color: ${markerColor}; width: 30px; height: 30px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 3px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3);"></div>`,
+                    iconSize: [30, 30],
+                    iconAnchor: [15, 30],
+                    popupAnchor: [0, -30]
+                });
+                
+                currentMarker = L.marker([studentLat, studentLon], { icon: currentIcon }).addTo(map);
+                currentMarker.bindPopup(`<strong>Your Current Location</strong><br>Distance: ${distance ? distance.toFixed(1) : 'N/A'}m`);
+                
+                // Fit map to show both markers
+                if (workplaceLat && workplaceLon) {
+                    const group = new L.featureGroup([currentMarker, workplaceMarker, radiusCircle]);
+                    map.fitBounds(group.getBounds().pad(0.2));
+                } else {
+                    map.setView([studentLat, studentLon], 18);
+                }
+            }
+            
+            // Update map info
+            const mapInfo = document.getElementById('mapInfo');
+            const distanceDisplay = document.getElementById('distanceDisplay');
+            const statusBadge = document.getElementById('statusBadge');
+            
+            if (distance !== null && distance !== undefined) {
+                distanceDisplay.textContent = distance.toFixed(1) + 'm';
+                mapInfo.style.display = 'block';
+                
+                if (valid) {
+                    statusBadge.className = 'badge bg-success';
+                    statusBadge.textContent = 'Within Radius';
+                } else {
+                    statusBadge.className = 'badge bg-danger';
+                    statusBadge.textContent = 'Outside Radius';
+                }
+            }
+        }
         
         // Update current time every second
         function updateCurrentTime() {
@@ -517,13 +802,19 @@ if (isset($data['error'])) {
             const ampm = hours >= 12 ? 'PM' : 'AM';
             const displayHours = hours % 12 || 12;
             const timeString = `${year}-${month}-${day} ${displayHours}:${minutes}:${seconds} ${ampm}`;
-            document.getElementById('current-time').textContent = timeString;
+            
+            // Update all current-time elements (in overlay and elsewhere)
+            const timeElements = document.querySelectorAll('#current-time');
+            timeElements.forEach(el => {
+                el.textContent = timeString;
+            });
         }
         
         setInterval(updateCurrentTime, 1000);
         
         // Check location on page load
         document.addEventListener('DOMContentLoaded', function() {
+            initMap();
             checkLocation();
         });
 
@@ -558,12 +849,19 @@ if (isset($data['error'])) {
         async function checkLocation() {
             const statusDiv = document.getElementById('locationStatus');
             const messageSpan = document.getElementById('locationMessage');
-            const checkBtn = statusDiv.querySelector('button');
+            const distanceSpan = document.getElementById('locationDistance');
+            const statusCard = document.getElementById('locationStatusCard');
+            const checkBtn = document.querySelector('#locationStatusCard .btn');
             
-            statusDiv.className = 'alert alert-info';
-            messageSpan.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Checking your location...';
-            checkBtn.disabled = true;
-            checkBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Checking...';
+            statusDiv.className = 'location-alert info';
+            statusCard.className = 'card location-status-card checking';
+            statusDiv.querySelector('.alert-icon').className = 'bi bi-hourglass-split alert-icon';
+            messageSpan.textContent = 'Checking your location...';
+            distanceSpan.style.display = 'none';
+            if (checkBtn) {
+                checkBtn.disabled = true;
+                checkBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Checking...';
+            }
             
             try {
                 const location = await getCurrentLocation();
@@ -576,19 +874,65 @@ if (isset($data['error'])) {
                 
                 const result = await response.json();
                 
+                isWithinRadius = result.valid;
+                
+                // Extract distance from result
+                const distance = result.distance || (result.message.match(/\((\d+\.?\d*)m\)/) ? parseFloat(result.message.match(/\((\d+\.?\d*)m\)/)[1]) : null);
+                
+                // Update status display
                 if (result.valid) {
-                    statusDiv.className = 'alert alert-success';
-                    messageSpan.innerHTML = `<i class="bi bi-check-circle me-1"></i>${result.message}`;
+                    statusDiv.className = 'location-alert success';
+                    statusCard.className = 'card location-status-card valid';
+                    statusDiv.querySelector('.alert-icon').className = 'bi bi-check-circle-fill alert-icon';
+                    messageSpan.textContent = 'Location verified. You are within the workplace radius.';
+                    if (distance !== null) {
+                        distanceSpan.textContent = `Distance: ${distance.toFixed(1)}m`;
+                        distanceSpan.style.display = 'block';
+                    }
                 } else {
-                    statusDiv.className = 'alert alert-danger';
-                    messageSpan.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i>${result.message}`;
+                    statusDiv.className = 'location-alert danger';
+                    statusCard.className = 'card location-status-card invalid';
+                    statusDiv.querySelector('.alert-icon').className = 'bi bi-exclamation-triangle-fill alert-icon';
+                    messageSpan.textContent = 'Location is too far from the workplace radius.';
+                    if (distance !== null) {
+                        distanceSpan.textContent = `Distance: ${distance.toFixed(1)}m`;
+                        distanceSpan.style.display = 'block';
+                    }
                 }
+                
+                // Update map if workplace location is available
+                if (result.workplace) {
+                    updateMap(
+                        location.latitude,
+                        location.longitude,
+                        result.workplace.latitude,
+                        result.workplace.longitude,
+                        result.distance,
+                        result.valid,
+                        result.workplace.name
+                    );
+                } else {
+                    // Just show student location if no workplace
+                    updateMap(
+                        location.latitude,
+                        location.longitude,
+                        null,
+                        null,
+                        result.distance,
+                        result.valid,
+                        null
+                    );
+                }
+                
             } catch (error) {
-                statusDiv.className = 'alert alert-warning';
-                messageSpan.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i>Location check failed. Please try again.`;
+                statusDiv.className = 'location-alert warning';
+                statusCard.className = 'card location-status-card checking';
+                statusDiv.querySelector('.alert-icon').className = 'bi bi-exclamation-triangle-fill alert-icon';
+                messageSpan.textContent = `Location check failed: ${error.message}. Please try again.`;
+                distanceSpan.style.display = 'none';
             } finally {
                 checkBtn.disabled = false;
-                checkBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Check Location';
+                checkBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> time in/out';
             }
         }
 
@@ -596,6 +940,13 @@ if (isset($data['error'])) {
         async function timeIn(blockType) {
             if (isProcessing) {
                 showAlert('warning', 'Please wait, processing previous request...');
+                return;
+            }
+            
+            // Check if location is verified first
+            if (!isWithinRadius) {
+                showAlert('danger', 'You must be within the workplace radius to time in. Please check your location.');
+                checkLocation(); // Refresh location check
                 return;
             }
             

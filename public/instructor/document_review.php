@@ -28,31 +28,78 @@ if (!$submissionId) {
     exit;
 }
 
-// Debug: Check session and instructor data
-error_log("Document Review Debug - Submission ID: " . $submissionId);
-error_log("Document Review Debug - Session User ID: " . ($_SESSION['user_id'] ?? 'NOT SET'));
-error_log("Document Review Debug - Session Role: " . ($_SESSION['role'] ?? 'NOT SET'));
-
-// Get submission details
+// Get instructor's section (supporting both junction table and old method)
 $pdo = App\Utils\Database::getInstance();
+$stmt = $pdo->prepare("
+    SELECT COALESCE(
+        (SELECT section_id FROM instructor_sections WHERE instructor_id = ? LIMIT 1),
+        (SELECT section_id FROM users WHERE id = ? AND role = 'instructor'),
+        (SELECT id FROM sections WHERE instructor_id = ? LIMIT 1)
+    ) as section_id
+");
+$stmt->execute([$_SESSION['user_id'], $_SESSION['user_id'], $_SESSION['user_id']]);
+$instructor = $stmt->fetch(PDO::FETCH_ASSOC);
+
+if (!$instructor || !$instructor['section_id']) {
+    header('Location: review_documents.php?error=no_section');
+    exit;
+}
+
+// Try to get submission from student_documents first
 $stmt = $pdo->prepare("
     SELECT sd.*, d.document_name, d.document_type, d.file_path as template_path,
            u.full_name as student_name, u.email as student_email, u.section_id
     FROM student_documents sd
     JOIN documents d ON sd.document_id = d.id
     JOIN users u ON sd.student_id = u.id
-    WHERE sd.id = ? AND u.section_id = (SELECT section_id FROM users WHERE id = ?)
+    WHERE sd.id = ? AND u.section_id = ?
 ");
-$stmt->execute([$submissionId, $_SESSION['user_id']]);
+$stmt->execute([$submissionId, $instructor['section_id']]);
 $submission = $stmt->fetch(PDO::FETCH_ASSOC);
 
-// Debug: Log query result
-error_log("Document Review Debug - Query result: " . ($submission ? 'FOUND' : 'NOT FOUND'));
-if ($submission) {
-    error_log("Document Review Debug - Student: " . $submission['student_name']);
-    error_log("Document Review Debug - Student Section: " . $submission['section_id']);
+// If not found in student_documents, try student_reports table
+if (!$submission) {
+    // Check if student_reports table exists
+    $stmt = $pdo->query("SHOW TABLES LIKE 'student_reports'");
+    $reportsTableExists = $stmt->rowCount() > 0;
+    
+    if ($reportsTableExists) {
+        // Get report submission details
+        $stmt = $pdo->prepare("
+            SELECT sr.*, 
+                   CASE 
+                       WHEN sr.report_type = 'excuse' THEN 'Excuse Document'
+                       ELSE CONCAT(UCASE(LEFT(sr.report_type, 1)), SUBSTRING(sr.report_type, 2), ' Report')
+                   END as document_name,
+                   CASE 
+                       WHEN sr.report_type = 'excuse' THEN 'excuse_document'
+                       ELSE CONCAT(sr.report_type, '_report')
+                   END as document_type,
+                   NULL as template_path,
+                   u.full_name as student_name, 
+                   u.email as student_email, 
+                   u.section_id,
+                   sr.file_path,
+                   sr.file_path as submission_file_path,
+                   sr.report_type,
+                   sr.report_period,
+                   sr.excuse_date
+            FROM student_reports sr
+            JOIN users u ON sr.student_id = u.id
+            WHERE sr.id = ? AND u.section_id = ?
+        ");
+        $stmt->execute([$submissionId, $instructor['section_id']]);
+        $submission = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        // Add submission_type for consistency
+        if ($submission) {
+            $submission['submission_type'] = 'report';
+            $submission['document_id'] = null; // Reports don't have document_id
+        }
+    }
 } else {
-    error_log("Document Review Debug - No submission found for ID: " . $submissionId);
+    // Add submission_type for regular documents
+    $submission['submission_type'] = 'document';
 }
 
 if (!$submission) {
@@ -110,15 +157,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Get submission history for this document
-$stmt = $pdo->prepare("
-    SELECT sd.*
-    FROM student_documents sd
-    WHERE sd.student_id = ? AND sd.document_id = ?
-    ORDER BY sd.submitted_at DESC
-");
-$stmt->execute([$submission['student_id'], $submission['document_id']]);
-$submissionHistory = $stmt->fetchAll(PDO::FETCH_ASSOC);
+// Get submission history for this document/report
+$submissionHistory = [];
+if (isset($submission['submission_type']) && $submission['submission_type'] === 'report') {
+    // Get report history (same student, same report type, same period)
+    if (isset($submission['report_type']) && isset($submission['report_period'])) {
+        if ($submission['report_type'] === 'excuse') {
+            // For excuse documents, match by excuse_date
+            $stmt = $pdo->prepare("
+                SELECT sr.*, 
+                       CASE 
+                           WHEN sr.report_type = 'excuse' THEN 'Excuse Document'
+                           ELSE CONCAT(UCASE(LEFT(sr.report_type, 1)), SUBSTRING(sr.report_type, 2), ' Report')
+                       END as document_name
+                FROM student_reports sr
+                WHERE sr.student_id = ? AND sr.report_type = 'excuse' AND sr.excuse_date = ?
+                ORDER BY sr.submitted_at DESC
+            ");
+            $stmt->execute([$submission['student_id'], $submission['excuse_date']]);
+        } else {
+            $stmt = $pdo->prepare("
+                SELECT sr.*, 
+                       CONCAT(UCASE(LEFT(sr.report_type, 1)), SUBSTRING(sr.report_type, 2), ' Report') as document_name
+                FROM student_reports sr
+                WHERE sr.student_id = ? AND sr.report_type = ? AND sr.report_period = ?
+                ORDER BY sr.submitted_at DESC
+            ");
+            $stmt->execute([$submission['student_id'], $submission['report_type'], $submission['report_period']]);
+        }
+        $submissionHistory = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+} else {
+    // Get regular document history
+    if (isset($submission['document_id'])) {
+        $stmt = $pdo->prepare("
+            SELECT sd.*
+            FROM student_documents sd
+            WHERE sd.student_id = ? AND sd.document_id = ?
+            ORDER BY sd.submitted_at DESC
+        ");
+        $stmt->execute([$submission['student_id'], $submission['document_id']]);
+        $submissionHistory = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+}
 
 // Get messages
 $success = $_GET['success'] ?? '';
@@ -255,14 +336,56 @@ $error = $errorMessage ?? $_GET['error'] ?? '';
                     <div class="card-body">
                         <div class="document-viewer">
                             <?php 
-                            // Check if file exists
-                            $filePath = __DIR__ . '/../../uploads/student_documents/' . basename($submission['submission_file_path']);
-                            $fileExists = file_exists($filePath);
+                            // Get file path based on submission type
+                            $fileExists = false;
+                            $filePath = null;
+                            $viewUrl = null;
                             
-                            if ($fileExists): ?>
+                            if (isset($submission['submission_type']) && $submission['submission_type'] === 'report') {
+                                // Reports use file_path directly (stored as relative path from web root)
+                                $originalFilePath = $submission['file_path'] ?? $submission['submission_file_path'] ?? null;
+                                
+                                // Check if file exists (try multiple possible paths for reports)
+                                if (!empty($originalFilePath)) {
+                                    $possiblePaths = [
+                                        __DIR__ . '/../../' . $originalFilePath,
+                                        __DIR__ . '/../../uploads/student_documents/' . basename($originalFilePath),
+                                        $originalFilePath
+                                    ];
+                                    
+                                    foreach ($possiblePaths as $path) {
+                                        if (file_exists($path)) {
+                                            $fileExists = true;
+                                            $filePath = $originalFilePath; // Keep original for URL
+                                            break;
+                                        }
+                                    }
+                                }
+                                
+                                if ($fileExists) {
+                                    // Reports: use direct file path (relative from web root)
+                                    $viewUrl = '../../' . str_replace('\\', '/', $filePath);
+                                }
+                            } else {
+                                // Regular documents: use submission_file_path and check like view_document.php does
+                                $originalFilePath = $submission['submission_file_path'] ?? null;
+                                
+                                if (!empty($originalFilePath)) {
+                                    // Use the same logic as view_document.php
+                                    $actualFilePath = __DIR__ . '/../../uploads/student_documents/' . basename($originalFilePath);
+                                    $fileExists = file_exists($actualFilePath);
+                                    
+                                    if ($fileExists) {
+                                        $filePath = $originalFilePath; // Keep original for view_document.php
+                                        // Regular documents: use view_document.php
+                                        $viewUrl = '../view_document.php?id=' . $submission['id'];
+                                    }
+                                }
+                            }
+                            
+                            if ($fileExists && !empty($filePath)): ?>
                                 <?php
-                                $fileExtension = strtolower(pathinfo($submission['submission_file_path'], PATHINFO_EXTENSION));
-                                $viewUrl = '../view_document.php?id=' . $submission['id'];
+                                $fileExtension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
                                 
                                 if ($fileExtension === 'pdf'): ?>
                                     <iframe src="<?= htmlspecialchars($viewUrl) ?>" 
@@ -290,6 +413,9 @@ $error = $errorMessage ?? $_GET['error'] ?? '';
                                         <i class="bi bi-exclamation-triangle" style="font-size: 4rem; color: #dc3545;"></i>
                                         <h5 class="mt-3">File Not Found</h5>
                                         <p class="text-muted">The submitted document file could not be located.</p>
+                                        <?php if (!empty($filePath)): ?>
+                                            <small class="text-muted">Path: <?= htmlspecialchars($filePath) ?></small>
+                                        <?php endif; ?>
                                     </div>
                                 </div>
                             <?php endif; ?>

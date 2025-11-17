@@ -259,9 +259,6 @@ $min_hours = $total_students_count > 0 ? min($total_hours_array) : 0;
                             <button class="btn btn-success" onclick="exportToCSV()">
                                 <i class="bi bi-download me-1" style="color: white;"></i>Export CSV
                             </button>
-                            <button class="btn btn-success" onclick="refreshPage()">
-                                <i class="bi bi-arrow-clockwise me-1" style="color: white;"></i>Refresh
-                            </button>
                         </div>
                     </div>
                 </div>
@@ -275,18 +272,6 @@ $min_hours = $total_students_count > 0 ? min($total_hours_array) : 0;
                         <input type="text" class="form-control" id="search" name="search" 
                                value="<?= htmlspecialchars($search) ?>" style="font-size: 13px;"
                                placeholder="Search by school ID, name, or workplace...">
-                    </div>
-                    <div class="col-md-2">
-                        <label for="status" class="form-label" >Status</label>
-                        <select class="form-select" id="status" name="status" style="font-size: 13px;">
-                            <option value="">All Status</option>
-                            <?php foreach ($status_counts as $status): ?>
-                                <option value="<?= $status['status'] ?>" 
-                                        <?= $status_filter === $status['status'] ? 'selected' : '' ?>>
-                                    <?= ucfirst(str_replace('_', ' ', $status['status'])) ?> (<?= $status['count'] ?>)
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
                     </div>
                     <div class="col-md-2">
                         <label for="sort" class="form-label" >Sort By</label>
@@ -500,9 +485,6 @@ $min_hours = $total_students_count > 0 ? min($total_hours_array) : 0;
             link.click();
         }
 
-        function refreshPage() {
-            window.location.reload();
-        }
 
         // Auto-submit form on filter change
         document.getElementById('status').addEventListener('change', function() {

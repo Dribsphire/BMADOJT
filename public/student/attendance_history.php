@@ -130,6 +130,10 @@ $totalPages = ceil($totalRecords / $limit);
             background-color: #0ea539 !important;
             color: white !important;
         }
+        .event-excuse {
+            background-color: #6f42c1 !important;
+            color: white !important;
+        }
         
         .calendar-container {
             background: white;
@@ -212,10 +216,11 @@ $totalPages = ceil($totalRecords / $limit);
                                                         <small class="text-muted">Missed</small>
                                                     </div>
                                                 </div>
+
                                                 <div class="col-6 col-md-3">
                                                     <div class="d-flex align-items-center">
-                                                        <div class="event-pending me-2" style="width: 12px; height: 12px; border-radius: 2px;"></div>
-                                                        <small class="text-muted">Pending Request</small>
+                                                        <div class="event-excuse me-2" style="width: 12px; height: 12px; border-radius: 2px;"></div>
+                                                        <small class="text-muted">Excused</small>
                                                     </div>
                                                 </div>
                                             </div>
@@ -276,6 +281,22 @@ $totalPages = ceil($totalRecords / $limit);
                             }
                             
                             const events = data.map(record => {
+                                // Handle excused days
+                                if (record.is_excused || record.block_type === 'excuse') {
+                                    return {
+                                        id: record.id,
+                                        title: 'Excused',
+                                        start: record.date,
+                                        allDay: true,
+                                        className: 'event-excuse',
+                                        extendedProps: {
+                                            record: record,
+                                            status: 'excused',
+                                            statusClass: 'excused'
+                                        }
+                                    };
+                                }
+                                
                                 const status = getAttendanceStatus(record);
                                 const statusClass = getStatusColorClass(status);
                                 
@@ -331,6 +352,11 @@ $totalPages = ceil($totalRecords / $limit);
         }
 
         function getAttendanceStatus(record) {
+            // Check if this is an excused day
+            if (record.is_excused || record.block_type === 'excuse') {
+                return 'excused';
+            }
+            
             // Check if this is a missed day (virtual record)
             if (record.is_missed || record.block_type === 'missed') {
                 return 'missed';
@@ -355,7 +381,8 @@ $totalPages = ceil($totalRecords / $limit);
                 'completed': 'event-completed',
                 'incomplete': 'event-incomplete', 
                 'missed': 'event-missed',
-                'pending': 'event-pending'
+                'pending': 'event-pending',
+                'excused': 'event-excuse'
             };
             return classes[status] || 'event-missed';
         }
@@ -464,301 +491,610 @@ $totalPages = ceil($totalRecords / $limit);
                 });
         }
 
-        // Print monthly attendance function
+        // Print monthly attendance function - DTR Format
         function printMonthlyAttendance(data, month) {
-            const printWindow = window.open('', '_blank');
-            const monthName = new Date(month + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-            
-            // Calculate totals
-            let totalHours = 0;
-            let morningHours = 0;
-            let afternoonHours = 0;
-            let overtimeHours = 0;
-            let completedDays = 0;
-            let incompleteDays = 0;
-            let missedDays = 0;
-            
-            data.forEach(record => {
-                if (record.hours_earned) {
-                    totalHours += parseFloat(record.hours_earned);
-                    if (record.block_type === 'morning') morningHours += parseFloat(record.hours_earned);
-                    if (record.block_type === 'afternoon') afternoonHours += parseFloat(record.hours_earned);
-                    if (record.block_type === 'overtime') overtimeHours += parseFloat(record.hours_earned);
-                }
-                
-                if (record.time_in && record.time_out) completedDays++;
-                else if (record.time_in && !record.time_out) incompleteDays++;
-                else if (!record.time_in) missedDays++;
-            });
-            
-            const printContent = `
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>Monthly Attendance Report - ${monthName}</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
-                        .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 20px; }
-                        .header h1 { color: #333; margin-bottom: 5px; }
-                        .header p { color: #666; margin: 0; }
-                        .summary { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 30px; }
-                        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
-                        .summary-item { text-align: center; padding: 10px; background: white; border-radius: 5px; }
-                        .summary-item h4 { margin: 0; color: #0ea539; }
-                        .summary-item p { margin: 5px 0 0 0; color: #666; }
-                        table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
-                        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-                        th { background-color: #0ea539; color: white; }
-                        .status-completed { color: #28a745; font-weight: bold; }
-                        .status-incomplete { color: #ffc107; font-weight: bold; }
-                        .status-missed { color: #dc3545; font-weight: bold; }
-                        .total-row { background-color: #f8f9fa; font-weight: bold; }
-                        .footer { text-align: center; margin-top: 30px; color: #666; font-size: 12px; }
-                        @media print { body { margin: 0; } }
-                    </style>
-                </head>
-                <body>
-                    <div class="header">
-                        <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
-                            <img src="../images/CHMSU.png" alt="CHMSU Logo" style="height: 80px; margin-right: 20px;">
-                            <div>
-                                <h1 style="margin: 0; color: #0ea539;">Monthly Attendance Report</h1>
-                                <p style="margin: 5px 0 0 0; color: #666;">Carlos Hilado Memorial State University</p>
-                            </div>
-                        </div>
-                        <p style="text-align: center; color: #666; margin: 0;">${monthName} - Generated on ${new Date().toLocaleDateString()}</p>
-                    </div>
+            // Fetch student data for DTR header
+            fetch('get_student_dtr_data.php')
+                .then(response => response.json())
+                .then(studentData => {
+                    const printWindow = window.open('', '_blank');
+                    const monthDate = new Date(month + '-01');
+                    const monthName = monthDate.toLocaleDateString('en-US', { month: 'long' }).toUpperCase();
+                    const year = monthDate.getFullYear();
                     
-                    <div class="summary">
-                        <h3>Summary</h3>
-                        <div class="summary-grid">
-                            <div class="summary-item">
-                                <h4>${totalHours.toFixed(2)}</h4>
-                                <p>Total Hours</p>
-                            </div>
-                            <div class="summary-item">
-                                <h4>${completedDays}</h4>
-                                <p>Completed Days</p>
-                            </div>
-                            <div class="summary-item">
-                                <h4>${incompleteDays}</h4>
-                                <p>Incomplete Days</p>
-                            </div>
-                            <div class="summary-item">
-                                <h4>${missedDays}</h4>
-                                <p>Missed Days</p>
-                            </div>
-                        </div>
-                    </div>
+                    // Parse student name
+                    const fullName = studentData.full_name || '';
+                    const nameParts = fullName.trim().split(/\s+/);
+                    const surname = nameParts.length > 0 ? nameParts[nameParts.length - 1] : '';
+                    const firstName = nameParts.length > 0 ? nameParts[0] : '';
+                    const middleInitial = nameParts.length > 2 ? nameParts[1].charAt(0).toUpperCase() + '.' : '';
                     
-                    <table>
-                        <thead>
+                    // Get section code (e.g., "4-B" from "BSIT4B" or "BSIT4A")
+                    const sectionCode = studentData.section_code || '';
+                    // Extract year (number) and section letter
+                    const yearMatch = sectionCode.match(/(\d+)/);
+                    const letterMatch = sectionCode.match(/([A-Z])$/);
+                    const yearNum = yearMatch ? yearMatch[1] : '';
+                    const letter = letterMatch ? letterMatch[1] : '';
+                    const yearSec = yearNum && letter ? yearNum + '-' + letter : sectionCode;
+                    
+                    // Organize attendance by date
+                    const attendanceByDate = {};
+                    
+                    data.forEach(record => {
+                        const date = new Date(record.date).getDate();
+                        if (!attendanceByDate[date]) {
+                            attendanceByDate[date] = {
+                                am_in: '',
+                                am_out: '',
+                                pm_in: '',
+                                pm_out: '',
+                                overtime_in: '',
+                                overtime_out: '',
+                                actual_hours: 0,
+                                counted_hours: 0,
+                                remarks: ''
+                            };
+                        }
+                        
+                        const timeIn = record.time_in ? new Date(record.time_in) : null;
+                        const timeOut = record.time_out ? new Date(record.time_out) : null;
+                        const hours = parseFloat(record.hours_earned || 0);
+                        
+                        // Only include completed blocks (both time_in and time_out exist)
+                        const isCompleted = timeIn && timeOut;
+                        
+                        if (record.block_type === 'morning' && isCompleted) {
+                            attendanceByDate[date].am_in = formatTime(timeIn);
+                            attendanceByDate[date].am_out = formatTime(timeOut);
+                            attendanceByDate[date].actual_hours += hours;
+                            attendanceByDate[date].counted_hours += hours;
+                        } else if (record.block_type === 'afternoon' && isCompleted) {
+                            attendanceByDate[date].pm_in = formatTime(timeIn);
+                            attendanceByDate[date].pm_out = formatTime(timeOut);
+                            attendanceByDate[date].actual_hours += hours;
+                            attendanceByDate[date].counted_hours += hours;
+                        } else if (record.block_type === 'overtime' && isCompleted) {
+                            attendanceByDate[date].overtime_in = formatTime(timeIn);
+                            attendanceByDate[date].overtime_out = formatTime(timeOut);
+                            attendanceByDate[date].actual_hours += hours;
+                            attendanceByDate[date].counted_hours += hours;
+                        }
+                    });
+                    
+                    // Get days in month
+                    const daysInMonth = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
+                    
+                    // Calculate totals
+                    let totalActualHours = 0;
+                    let totalCountedHours = 0;
+                    
+                    // Generate DTR rows
+                    let dtrRows = '';
+                    for (let day = 1; day <= daysInMonth; day++) {
+                        const dayData = attendanceByDate[day] || {
+                            am_in: '', am_out: '', pm_in: '', pm_out: '',
+                            overtime_in: '', overtime_out: '',
+                            actual_hours: 0, counted_hours: 0, remarks: ''
+                        };
+                        
+                        totalActualHours += dayData.actual_hours;
+                        totalCountedHours += dayData.counted_hours;
+                        
+                        const actualHrs = formatHours(dayData.actual_hours);
+                        const countedHrs = formatHours(dayData.counted_hours);
+                        
+                        dtrRows += `
                             <tr>
-                                <th>Date</th>
-                                <th>Block</th>
-                                <th>Time In</th>
-                                <th>Time Out</th>
-                                <th>Hours</th>
-                                <th>Status</th>
+                                <td class="date-cell">${day}</td>
+                                <td class="time-cell">${dayData.am_in}</td>
+                                <td class="time-cell">${dayData.am_out}</td>
+                                <td class="time-cell">${dayData.pm_in}</td>
+                                <td class="time-cell">${dayData.pm_out}</td>
+                                <td class="time-cell">${dayData.overtime_in}</td>
+                                <td class="time-cell">${dayData.overtime_out}</td>
+                                <td class="hours-cell">${actualHrs}</td>
+                                <td class="hours-cell">${countedHrs}</td>
+                                <td class="remarks-cell">${dayData.remarks}</td>
                             </tr>
-                        </thead>
-                        <tbody>
-                            ${data.map(record => {
-                                const status = getAttendanceStatus(record);
-                                const statusClass = status === 'completed' ? 'status-completed' : 
-                                                   status === 'incomplete' ? 'status-incomplete' : 'status-missed';
-                                const statusText = status === 'completed' ? 'Completed' : 
-                                                status === 'incomplete' ? 'Incomplete' : 'Missed';
-                                
-                                return `
-                                    <tr>
-                                        <td>${new Date(record.date).toLocaleDateString()}</td>
-                                        <td>${record.block_type.charAt(0).toUpperCase() + record.block_type.slice(1)}</td>
-                                        <td>${record.time_in ? new Date(record.time_in).toLocaleTimeString() : 'N/A'}</td>
-                                        <td>${record.time_out ? new Date(record.time_out).toLocaleTimeString() : 'N/A'}</td>
-                                        <td>${record.hours_earned || 0}</td>
-                                        <td class="${statusClass}">${statusText}</td>
-                                    </tr>
-                                `;
-                            }).join('')}
-                            <tr class="total-row">
-                                <td colspan="4"><strong>Total Hours</strong></td>
-                                <td><strong>${totalHours.toFixed(2)}</strong></td>
-                                <td></td>
-                            </tr>
-                        </tbody>
-                    </table>
+                        `;
+                    }
                     
-                    <div class="footer">
-                        <p><strong>Carlos Hilado Memorial State University</strong></p>
-                        <p>OJT Attendance Management System</p>
-                        <p>This report was generated on ${new Date().toLocaleDateString()}</p>
-                    </div>
-                </body>
-                </html>
-            `;
-            
-            printWindow.document.write(printContent);
-            printWindow.document.close();
-            
-            printWindow.onload = function() {
-                printWindow.print();
-                printWindow.close();
-            };
+                    // Add total row
+                    const totalActualHrs = formatHours(totalActualHours);
+                    const totalCountedHrs = formatHours(totalCountedHours);
+                    dtrRows += `
+                        <tr class="total-row">
+                            <td class="date-cell" colspan="7" style="text-align: right; font-weight: bold; padding-right: 10px;">TOTAL:</td>
+                            <td class="hours-cell">${totalActualHrs}</td>
+                            <td class="hours-cell">${totalCountedHrs}</td>
+                            <td class="remarks-cell"></td>
+                        </tr>
+                    `;
+                    
+                    const headerImagePath = window.location.protocol + '//' + window.location.host + '/bmadOJT/public/images/header.png';
+                    
+                    const printContent = `
+                        <!DOCTYPE html>
+                        <html>
+                        <head>
+                            <title>DAILY TIME RECORD - ${monthName} ${year}</title>
+                            <style>
+                                @page { size: 210mm 297mm; margin: 0.5cm; }
+                                * { margin: 0; padding: 0; box-sizing: border-box; }
+                                body { 
+                                    font-family: 'Arial', sans-serif; 
+                                    font-size: 12px;
+                                    padding: 10px;
+                                    background: white;
+                                }
+
+                                .dtr-header {
+                                    display: flex;
+                                    justify-content: space-between;
+                                    margin-bottom: 15px;
+                                    border: 2px solid #000;
+                                    padding: 10px;
+                                }
+                                .dtr-header-left {
+                                    flex: 1;
+                                    border-right: 1px solid #000;
+                                    padding-right: 10px;
+                                }
+                                .dtr-header-middle {
+                                    flex: 1;
+                                    border-right: 1px solid #000;
+                                    padding: 0 10px;
+                                }
+                                .dtr-header-right {
+                                    flex: 1;
+                                    padding-left: 10px;
+                                }
+                                .header-field {
+                                    margin-bottom: 8px;
+                                    display: flex;
+                                    align-items: baseline;
+                                }
+                                .header-label {
+                                    font-weight: bold;
+                                    min-width: 80px;
+                                    font-size: 9px;
+                                }
+                                .header-value {
+                                    border-bottom: 1px dotted #000;
+                                    flex: 1;
+                                    min-height: 14px;
+                                    padding-left: 5px;
+                                    font-size: 9px;
+                                }
+                                .header-fixed {
+                                    font-weight: bold;
+                                    font-size: 9px;
+                                }
+                                .header-image-section {
+                                    text-align: center;
+                                    margin-bottom: 10px;
+                                }
+                                .header-image-section img {
+                                    width: 100%;
+                                    max-width: 100%;
+                                    height: auto;
+                                    display: block;
+                                    margin: 0 auto;
+                                }
+                                .dtr-table {
+                                    width: 100%;
+                                    border-collapse: collapse;
+                                    font-size: 8px;
+                                    margin-top: 10px;
+                                }
+                                .dtr-table th {
+                                    background-color: #333;
+                                    color: white;
+                                    border: 1px solid #000;
+                                    padding: 4px 2px;
+                                    text-align: center;
+                                    font-weight: bold;
+                                    font-size: 7px;
+                                }
+                                .dtr-table td {
+                                    border: 1px solid #000;
+                                    padding: 3px 2px;
+                                    text-align: center;
+                                    font-size: 8px;
+                                }
+                                .date-cell {
+                                    font-weight: bold;
+                                    width: 30px;
+                                }
+                                .time-cell {
+                                    width: 50px;
+                                    min-width: 50px;
+                                }
+                                .hours-cell {
+                                    background-color: #e6e6fa;
+                                    font-weight: bold;
+                                    width: 60px;
+                                }
+                                .remarks-cell {
+                                    width: 80px;
+                                    text-align: left;
+                                    padding-left: 5px;
+                                }
+                                .col-group {
+                                    border-left: 2px solid #000;
+                                    border-right: 2px solid #000;
+                                }
+                                .total-row {
+                                    font-weight: bold;
+                                    background-color: #f0f0f0;
+                                }
+                                .dtr-footer {
+                                    display: flex;
+                                    justify-content: space-between;
+                                    margin-top: 20px;
+                                    padding-top: 10px;
+                                }
+                                .footer-section {
+                                    flex: 1;
+                                    padding: 0 20px;
+                                }
+                                .footer-label {
+                                    font-weight: bold;
+                                    font-size: 9px;
+                                    margin-bottom: 5px;
+                                }
+                                .signature-line {
+                                    border-bottom: 1px solid #000;
+                                    margin-bottom: 5px;
+                                    padding-bottom: 2px;
+                                    min-height: 40px;
+                                    position: relative;
+                                }
+                                .signature-space {
+                                    min-height: 35px;
+                                }
+                                .signature-label {
+                                    font-size: 7px;
+                                    color: #666;
+                                    text-align: center;
+                                    margin-top: 2px;
+                                }
+                                .name-line {
+                                    font-size: 8px;
+                                    text-align: center;
+                                    margin-top: 5px;
+                                    border-bottom: 1px dotted #000;
+                                    padding-bottom: 2px;
+                                }
+                                .date-line {
+                                    font-size: 8px;
+                                    text-align: center;
+                                    margin-top: 10px;
+                                }
+                                @media print {
+                                    body { margin: 0; padding: 10px; }
+                                    .dtr-table { page-break-inside: avoid; }
+                                    .dtr-footer { page-break-inside: avoid; }
+                                }
+                            </style>
+                        </head>
+                        <body>
+                            <div class="dtr-container">
+                                <div class="header-image-section">
+                                    <img src="${headerImagePath}" alt="DTR Header" onerror="this.style.display='none'">
+                                </div>
+                                
+                                <div class="dtr-header">
+                                    <div class="dtr-header-left">
+                                        <div class="header-field">
+                                            <span class="header-label">Surname:</span>
+                                            <span class="header-value">${surname}</span>
+                                        </div>
+                                        <div class="header-field">
+                                            <span class="header-fixed">CHMSU COLLEGE OF COMPUTER STUDIES</span>
+                                        </div>
+                                        <div class="header-field">
+                                            <span class="header-fixed">Campus: ALIJIS CAMPUS</span>
+                                        </div>
+                                        <div class="header-field">
+                                            <span class="header-label">Host Training Establishment (HTE):</span>
+                                            <span class="header-value">${studentData.workplace_name || ''}</span>
+                                        </div>
+                                        <div class="header-field">
+                                            <span class="header-label">OJT Supervisor:</span>
+                                            <span class="header-value">${studentData.supervisor_name || ''}</span>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="dtr-header-middle">
+                                        <div class="header-field">
+                                            <span class="header-label">First Name:</span>
+                                            <span class="header-value">${firstName}</span>
+                                        </div>
+                                        <div class="header-field">
+                                            <span class="header-label">Program:</span>
+                                            <span class="header-fixed">BACHELOR OF SCIENCE IN INFORMATION TECHNOLOGY</span>
+                                        </div>
+                                        <div class="header-field">
+                                            <span class="header-label">Department Assigned To:</span>
+                                            <span class="header-value">${studentData.student_position || ''}</span>
+                                        </div>
+                                        <div class="header-field">
+                                            <span class="header-label">Designation:</span>
+                                            <span class="header-value">${studentData.student_position || ''}</span>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="dtr-header-right">
+                                        <div class="header-field">
+                                            <span class="header-label">M.I.:</span>
+                                            <span class="header-value">${middleInitial}</span>
+                                        </div>
+                                        <div class="header-field">
+                                            <span class="header-label">Yr./Sec.:</span>
+                                            <span class="header-fixed">${yearSec}</span>
+                                        </div>
+                                        <div class="header-field">
+                                            <span class="header-label">For the Month of:</span>
+                                            <span class="header-fixed">${monthName}</span>
+                                        </div>
+                                        <div class="header-field">
+                                            <span class="header-label">Year:</span>
+                                            <span class="header-fixed">${year}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <table class="dtr-table">
+                                    <thead>
+                                        <tr>
+                                            <th rowspan="2" class="date-cell">DATE</th>
+                                            <th colspan="2" class="col-group">AM</th>
+                                            <th colspan="2" class="col-group">PM</th>
+                                            <th colspan="2" class="col-group">OVERTIME</th>
+                                            <th colspan="2" class="col-group" style="background-color: #dda0dd;">TOTAL DUTY HOURS</th>
+                                            <th rowspan="2" class="remarks-cell">REMARKS</th>
+                                        </tr>
+                                        <tr>
+                                            <th class="col-group">AM <br>IN</th>
+                                            <th class="col-group">AM <br>OUT</th>
+                                            <th class="col-group">PM <br>IN</th>
+                                            <th class="col-group">PM <br>OUT</th>
+                                            <th class="col-group">IN</th>
+                                            <th class="col-group">OUT</th>
+                                            <th class="col-group" style="background-color: #dda0dd;">ACTUAL HRS:MINS</th>
+                                            <th class="col-group" style="background-color: #dda0dd;">COUNTED HRS:MINS</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${dtrRows}
+                                    </tbody>
+                                </table>
+                                
+                                <div class="dtr-footer">
+                                    <div class="footer-section">
+                                        <div class="footer-label">Prepared by:</div>
+                                        <div class="signature-line">
+                                            <div class="signature-space"></div>
+                                            <div class="signature-label">Signature over Printed Name</div>
+                                        </div>
+                                        <div class="name-line">${fullName}</div>
+                                        <div class="date-line">Date: _______________</div>
+                                    </div>
+                                    
+                                    <div class="footer-section">
+                                        <div class="footer-label">Reviewed by:</div>
+                                        <div class="signature-line">
+                                            <div class="signature-space"></div>
+                                            <div class="signature-label">Signature over Printed Name</div>
+                                        </div>
+                                        <div class="name-line">${studentData.supervisor_name || '________________'}</div>
+                                        <div class="date-line">Date: _______________</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </body>
+                        </html>
+                    `;
+                    
+                    printWindow.document.write(printContent);
+                    printWindow.document.close();
+                    
+                    printWindow.onload = function() {
+                        setTimeout(() => {
+                            printWindow.print();
+                        }, 250);
+                    };
+                })
+                .catch(error => {
+                    console.error('Error fetching student data:', error);
+                    alert('Error loading student information for DTR.');
+                });
+        }
+        
+        function formatTime(date) {
+            const hours = date.getHours();
+            const minutes = date.getMinutes();
+            const displayHours = hours % 12 || 12; // Convert to 12-hour format
+            return String(displayHours) + ':' + String(minutes).padStart(2, '0');
+        }
+        
+        function formatHours(hours) {
+            if (!hours || hours === 0) return '0:00:00';
+            const h = Math.floor(hours);
+            const m = Math.floor((hours - h) * 60);
+            const s = Math.floor(((hours - h) * 60 - m) * 60);
+            return h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
         }
 
         // Print all attendance function
         function printAllAttendance(data) {
-            const printWindow = window.open('', '_blank');
-            
-            // Calculate totals
-            let totalHours = 0;
-            let morningHours = 0;
-            let afternoonHours = 0;
-            let overtimeHours = 0;
-            let completedDays = 0;
-            let incompleteDays = 0;
-            let missedDays = 0;
-            
-            data.forEach(record => {
-                if (record.hours_earned) {
-                    totalHours += parseFloat(record.hours_earned);
-                    if (record.block_type === 'morning') morningHours += parseFloat(record.hours_earned);
-                    if (record.block_type === 'afternoon') afternoonHours += parseFloat(record.hours_earned);
-                    if (record.block_type === 'overtime') overtimeHours += parseFloat(record.hours_earned);
-                }
-                
-                if (record.time_in && record.time_out) completedDays++;
-                else if (record.time_in && !record.time_out) incompleteDays++;
-                else if (!record.time_in) missedDays++;
-            });
-            
-            const printContent = `
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>Complete OJT Attendance Report</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
-                        .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 20px; }
-                        .header h1 { color: #333; margin-bottom: 5px; }
-                        .header p { color: #666; margin: 0; }
-                        .summary { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 30px; }
-                        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
-                        .summary-item { text-align: center; padding: 10px; background: white; border-radius: 5px; }
-                        .summary-item h4 { margin: 0; color: #0ea539; }
-                        .summary-item p { margin: 5px 0 0 0; color: #666; }
-                        table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
-                        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-                        th { background-color: #0ea539; color: white; }
-                        .status-completed { color: #28a745; font-weight: bold; }
-                        .status-incomplete { color: #ffc107; font-weight: bold; }
-                        .status-missed { color: #dc3545; font-weight: bold; }
-                        .total-row { background-color: #f8f9fa; font-weight: bold; }
-                        .footer { text-align: center; margin-top: 30px; color: #666; font-size: 12px; }
-                        @media print { body { margin: 0; } }
-                    </style>
-                </head>
-                <body>
-                    <div class="header">
-                        <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
-                            <img src="../images/CHMSU.png" alt="CHMSU Logo" style="height: 80px; margin-right: 20px;">
-                            <div>
-                                <h1 style="margin: 0; color: #0ea539;">Complete OJT Attendance Report</h1>
-                                <p style="margin: 5px 0 0 0; color: #666;">Carlos Hilado Memorial State University</p>
-                            </div>
-                        </div>
-                        <p style="text-align: center; color: #666; margin: 0;">Generated on ${new Date().toLocaleDateString()}</p>
-                    </div>
+            // Fetch student data for header
+            fetch('get_student_dtr_data.php')
+                .then(response => response.json())
+                .then(studentData => {
+                    const printWindow = window.open('', '_blank');
                     
-                    <div class="summary">
-                        <h3>Overall Summary</h3>
-                        <div class="summary-grid">
-                            <div class="summary-item">
-                                <h4>${totalHours.toFixed(2)}</h4>
-                                <p>Total Hours</p>
-                            </div>
-                            <div class="summary-item">
-                                <h4>${morningHours.toFixed(2)}</h4>
-                                <p>Morning Hours</p>
-                            </div>
-                            <div class="summary-item">
-                                <h4>${afternoonHours.toFixed(2)}</h4>
-                                <p>Afternoon Hours</p>
-                            </div>
-                            <div class="summary-item">
-                                <h4>${overtimeHours.toFixed(2)}</h4>
-                                <p>Overtime Hours</p>
-                            </div>
-                            <div class="summary-item">
-                                <h4>${completedDays}</h4>
-                                <p>Completed Days</p>
-                        </div>
-                            <div class="summary-item">
-                                <h4>${incompleteDays}</h4>
-                                <p>Incomplete Days</p>
-                            </div>
-                            <div class="summary-item">
-                                <h4>${missedDays}</h4>
-                                <p>Missed Days</p>
-                            </div>
-                        </div>
-                    </div>
+                    // Filter only completed records (both time_in and time_out exist)
+                    const completedRecords = data.filter(record => record.time_in && record.time_out);
                     
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Block</th>
-                                <th>Time In</th>
-                                <th>Time Out</th>
-                                <th>Hours</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${data.map(record => {
-                                const status = getAttendanceStatus(record);
-                                const statusClass = status === 'completed' ? 'status-completed' : 
-                                                   status === 'incomplete' ? 'status-incomplete' : 'status-missed';
-                                const statusText = status === 'completed' ? 'Completed' : 
-                                                status === 'incomplete' ? 'Incomplete' : 'Missed';
-                                
-                                return `
+                    // Calculate total hours from completed records only
+                    let totalHours = 0;
+                    completedRecords.forEach(record => {
+                        if (record.hours_earned) {
+                            totalHours += parseFloat(record.hours_earned);
+                        }
+                    });
+                    
+                    const headerImagePath = window.location.protocol + '//' + window.location.host + '/bmadOJT/public/images/header.png';
+                    const studentName = studentData.full_name || 'Student Name';
+                    const workplaceName = studentData.workplace_name || '';
+                    const supervisorName = studentData.supervisor_name || '';
+                    
+                    const printContent = `
+                        <!DOCTYPE html>
+                        <html>
+                        <head>
+                            <title>Complete OJT Attendance Report</title>
+                            <style>
+                                @page { size: 210mm 297mm; margin: 0.5cm; }
+                                * { margin: 0; padding: 0; box-sizing: border-box; }
+                                body { 
+                                    font-family: Arial, sans-serif; 
+                                    font-size: 12px;
+                                    padding: 10px;
+                                    background: white;
+                                }
+                                .header-image-section {
+                                    text-align: center;
+                                    margin-bottom: 10px;
+                                }
+                                .header-image-section img {
+                                    width: 100%;
+                                    max-width: 100%;
+                                    height: auto;
+                                    display: block;
+                                    margin: 0 auto;
+                                }
+                                .student-info {
+                                    margin-bottom: 15px;
+                                    padding: 10px;
+                                }
+                                .student-name {
+                                    text-align: center;
+                                    font-size: 14px;
+                                    font-weight: bold;
+                                    margin-bottom: 10px;
+                                }
+                                .info-row {
+                                    font-size: 11px;
+                                    margin-bottom: 5px;
+                                    padding: 3px 0;
+                                }
+                                .info-label {
+                                    font-weight: bold;
+                                    display: inline-block;
+                                    min-width: 200px;
+                                }
+                                .info-value {
+                                    display: inline-block;
+                                }
+                                table { 
+                                    width: 100%; 
+                                    border-collapse: collapse; 
+                                    margin-top: 20px;
+                                    font-size: 10px;
+                                }
+                                th, td { 
+                                    border: 1px solid #000; 
+                                    padding: 8px; 
+                                    text-align: left; 
+                                }
+                                th { 
+                                    background-color: #333; 
+                                    color: white; 
+                                    font-weight: bold;
+                                    text-align: center;
+                                }
+                                .total-row { 
+                                    background-color: #f0f0f0; 
+                                    font-weight: bold; 
+                                }
+                                @media print { 
+                                    body { margin: 0; padding: 5px; }
+                                    .header-image-section { margin-bottom: 5px; }
+                                    .student-info { margin-bottom: 10px; }
+                                }
+                            </style>
+                        </head>
+                        <body>
+                            <div class="header-image-section">
+                                <img src="${headerImagePath}" alt="DTR Header" onerror="this.style.display='none'">
+                            </div>
+                            
+                            <div class="student-info">
+                                <div class="student-name">
+                                    ${studentName}
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-label">Host Training Establishment (HTE):</span>
+                                    <span class="info-value">${workplaceName}</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-label">OJT Supervisor:</span>
+                                    <span class="info-value">${supervisorName}</span>
+                                </div>
+                            </div>
+                            
+                            <table>
+                                <thead>
                                     <tr>
-                                        <td>${new Date(record.date).toLocaleDateString()}</td>
-                                        <td>${record.block_type.charAt(0).toUpperCase() + record.block_type.slice(1)}</td>
-                                        <td>${record.time_in ? new Date(record.time_in).toLocaleTimeString() : 'N/A'}</td>
-                                        <td>${record.time_out ? new Date(record.time_out).toLocaleTimeString() : 'N/A'}</td>
-                                        <td>${record.hours_earned || 0}</td>
-                                        <td class="${statusClass}">${statusText}</td>
+                                        <th>Date</th>
+                                        <th>Block</th>
+                                        <th>Time In</th>
+                                        <th>Time Out</th>
+                                        <th>Hours</th>
                                     </tr>
-                                `;
-                            }).join('')}
-                            <tr class="total-row">
-                                <td colspan="4"><strong>Total Hours</strong></td>
-                                <td><strong>${totalHours.toFixed(2)}</strong></td>
-                                <td></td>
-                            </tr>
-                        </tbody>
-                    </table>
+                                </thead>
+                                <tbody>
+                                    ${completedRecords.map(record => {
+                                        const timeIn = record.time_in ? formatTime(new Date(record.time_in)) : '';
+                                        const timeOut = record.time_out ? formatTime(new Date(record.time_out)) : '';
+                                        
+                                        return `
+                                            <tr>
+                                                <td>${new Date(record.date).toLocaleDateString()}</td>
+                                                <td>${record.block_type.charAt(0).toUpperCase() + record.block_type.slice(1)}</td>
+                                                <td>${timeIn}</td>
+                                                <td>${timeOut}</td>
+                                                <td>${record.hours_earned || 0}</td>
+                                            </tr>
+                                        `;
+                                    }).join('')}
+                                    <tr class="total-row">
+                                        <td colspan="4" style="text-align: right; padding-right: 10px;"><strong>Total Hours</strong></td>
+                                        <td><strong>${totalHours.toFixed(2)}</strong></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </body>
+                        </html>
+                    `;
                     
-                    <div class="footer">
-                        <p><strong>Carlos Hilado Memorial State University</strong></p>
-                        <p>OJT Attendance Management System</p>
-                        <p>This report was generated on ${new Date().toLocaleDateString()}</p>
-                    </div>
-                </body>
-                </html>
-            `;
-            
-            printWindow.document.write(printContent);
-            printWindow.document.close();
-            
-            printWindow.onload = function() {
-                printWindow.print();
-                printWindow.close();
-            };
+                    printWindow.document.write(printContent);
+                    printWindow.document.close();
+                    
+                    printWindow.onload = function() {
+                        setTimeout(() => {
+                            printWindow.print();
+                        }, 250);
+                    };
+                })
+                .catch(error => {
+                    console.error('Error fetching student data:', error);
+                    alert('Error loading student information for report.');
+                });
         }
 
         function showDayAttendanceDetails(clickedDate) {
@@ -786,6 +1122,13 @@ $totalPages = ceil($totalRecords / $limit);
                     
                     if (records.length === 0) {
                         showNoAttendanceModal(clickedDate);
+                        return;
+                    }
+                    
+                    // Check if this is an excused day
+                    const excusedRecord = records.find(r => r.is_excused || r.block_type === 'excuse');
+                    if (excusedRecord) {
+                        showExcusedDayModal(clickedDate);
                         return;
                     }
                     
@@ -949,6 +1292,51 @@ $totalPages = ceil($totalRecords / $limit);
                     </div>
                 </div>
             `;
+        }
+        
+        function showExcusedDayModal(date) {
+            const dateFormatted = date.toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+            });
+            
+            const modalHtml = `
+                <div class="modal fade" id="dayAttendanceModal" tabindex="-1">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header bg-primary text-white">
+                                <h5 class="modal-title">
+                                    <i class="bi bi-calendar-check me-2"></i>${dateFormatted}
+                                </h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body text-center py-5">
+                                <i class="bi bi-check-circle-fill text-success" style="font-size: 4rem;"></i>
+                                <h4 class="mt-3 mb-2">Excused</h4>
+                                <p class="text-muted">You have been excused for this date. Your absence has been approved by your instructor.</p>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Remove existing modal if any
+            const existingModal = document.getElementById('dayAttendanceModal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            // Add modal to body
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('dayAttendanceModal'));
+            modal.show();
         }
         
         function showMissedDayModal(date) {

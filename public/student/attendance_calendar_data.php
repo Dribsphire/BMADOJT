@@ -88,8 +88,52 @@ try {
         $stmt->execute([$studentId, $monthFilter]);
         $attendanceHistory = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
+        // Get approved excuse documents for this month
+        $excuseDates = [];
+        try {
+            $stmt = $pdo->query("SHOW TABLES LIKE 'student_reports'");
+            if ($stmt->rowCount() > 0) {
+                $stmt = $pdo->prepare("
+                    SELECT excuse_date 
+                    FROM student_reports 
+                    WHERE student_id = ? 
+                    AND report_type = 'excuse' 
+                    AND status = 'approved'
+                    AND excuse_date IS NOT NULL
+                    AND DATE_FORMAT(excuse_date, '%Y-%m') = ?
+                ");
+                $stmt->execute([$studentId, $monthFilter]);
+                $excuses = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                foreach ($excuses as $excuse) {
+                    if ($excuse['excuse_date']) {
+                        $excuseDates[] = $excuse['excuse_date'];
+                    }
+                }
+            }
+        } catch (Exception $e) {
+            // If table doesn't exist or error, just continue without excuse dates
+        }
+        
         // For monthly data, just return the records without missed day logic
         $calendarData = [];
+        
+        // Add approved excuse documents as special events
+        foreach ($excuseDates as $excuseDate) {
+            $calendarData[] = [
+                'id' => 'excuse_' . str_replace('-', '', $excuseDate),
+                'date' => $excuseDate,
+                'block_type' => 'excuse',
+                'time_in' => null,
+                'time_out' => null,
+                'hours_earned' => 0,
+                'time_in_photo_path' => null,
+                'forgot_timeout_request_id' => null,
+                'forgot_timeout_status' => null,
+                'instructor_response' => null,
+                'is_excused' => true
+            ];
+        }
+        
         foreach ($attendanceHistory as $record) {
             // Get forgot timeout request info if exists
             $forgotTimeoutInfo = null;
@@ -133,8 +177,47 @@ try {
         $stmt->execute([$studentId, $dateFilter]);
         $attendanceHistory = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
+        // Check if there's an approved excuse for this date
+        $hasExcuse = false;
+        try {
+            $stmt = $pdo->query("SHOW TABLES LIKE 'student_reports'");
+            if ($stmt->rowCount() > 0) {
+                $stmt = $pdo->prepare("
+                    SELECT id 
+                    FROM student_reports 
+                    WHERE student_id = ? 
+                    AND report_type = 'excuse' 
+                    AND status = 'approved'
+                    AND excuse_date = ?
+                    LIMIT 1
+                ");
+                $stmt->execute([$studentId, $dateFilter]);
+                $hasExcuse = $stmt->fetch() !== false;
+            }
+        } catch (Exception $e) {
+            // If error, continue without excuse check
+        }
+        
         // For specific date, just return the records without missed day logic
         $calendarData = [];
+        
+        // If there's an approved excuse, add it first
+        if ($hasExcuse) {
+            $calendarData[] = [
+                'id' => 'excuse_' . str_replace('-', '', $dateFilter),
+                'date' => $dateFilter,
+                'block_type' => 'excuse',
+                'time_in' => null,
+                'time_out' => null,
+                'hours_earned' => 0,
+                'time_in_photo_path' => null,
+                'forgot_timeout_request_id' => null,
+                'forgot_timeout_status' => null,
+                'instructor_response' => null,
+                'is_excused' => true
+            ];
+        }
+        
         foreach ($attendanceHistory as $record) {
             // Get forgot timeout request info if exists
             $forgotTimeoutInfo = null;
@@ -163,7 +246,7 @@ try {
         }
         
         // If no records for this date, check if it should be marked as missed
-        if (empty($calendarData)) {
+        if (empty($calendarData) && !$hasExcuse) {
             // Get student's OJT start date to check if this date should be marked as missed
             $stmt = $pdo->prepare("
                 SELECT ojt_start_date 
@@ -179,9 +262,45 @@ try {
                 
                 // Check if the requested date is within OJT period and before today
                 if ($dateFilter >= $startDate && $dateFilter <= $currentDate) {
-                    // Check if it's a weekday
-                    $dayOfWeek = date('w', strtotime($dateFilter));
-                    if ($dayOfWeek != 0 && $dayOfWeek != 6) { // Not weekend
+                // Check if it's a weekday
+                $dayOfWeek = date('w', strtotime($dateFilter));
+                if ($dayOfWeek != 0 && $dayOfWeek != 6) { // Not weekend
+                    // Check if there's an approved excuse for this date
+                    $hasExcuse = false;
+                    try {
+                        $stmt = $pdo->query("SHOW TABLES LIKE 'student_reports'");
+                        if ($stmt->rowCount() > 0) {
+                            $stmt = $pdo->prepare("
+                                SELECT id 
+                                FROM student_reports 
+                                WHERE student_id = ? 
+                                AND report_type = 'excuse' 
+                                AND status = 'approved'
+                                AND excuse_date = ?
+                                LIMIT 1
+                            ");
+                            $stmt->execute([$studentId, $dateFilter]);
+                            $hasExcuse = $stmt->fetch() !== false;
+                        }
+                    } catch (Exception $e) {
+                        // If error, continue without excuse check
+                    }
+                    
+                    if ($hasExcuse) {
+                        $calendarData[] = [
+                            'id' => 'excuse_' . str_replace('-', '', $dateFilter),
+                            'date' => $dateFilter,
+                            'block_type' => 'excuse',
+                            'time_in' => null,
+                            'time_out' => null,
+                            'hours_earned' => 0,
+                            'time_in_photo_path' => null,
+                            'forgot_timeout_request_id' => null,
+                            'forgot_timeout_status' => null,
+                            'instructor_response' => null,
+                            'is_excused' => true
+                        ];
+                    } else {
                         $calendarData[] = [
                             'id' => 'missed_' . str_replace('-', '', $dateFilter),
                             'date' => $dateFilter,
@@ -196,6 +315,7 @@ try {
                             'is_missed' => true
                         ];
                     }
+                }
                 }
             }
         }
@@ -244,11 +364,54 @@ try {
             }
         }
         
+        // Get approved excuse documents
+        $excuseDates = [];
+        try {
+            $stmt = $pdo->query("SHOW TABLES LIKE 'student_reports'");
+            if ($stmt->rowCount() > 0) {
+                $stmt = $pdo->prepare("
+                    SELECT excuse_date 
+                    FROM student_reports 
+                    WHERE student_id = ? 
+                    AND report_type = 'excuse' 
+                    AND status = 'approved'
+                    AND excuse_date IS NOT NULL
+                ");
+                $stmt->execute([$studentId]);
+                $excuses = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                foreach ($excuses as $excuse) {
+                    if ($excuse['excuse_date']) {
+                        $excuseDates[] = $excuse['excuse_date'];
+                    }
+                }
+            }
+        } catch (Exception $e) {
+            // If table doesn't exist or error, just continue without excuse dates
+        }
+        
         // Find missed dates (dates in OJT period but no attendance)
-        $missedDates = array_diff($allDates, $attendedDates);
+        // Exclude excuse dates from missed dates
+        $missedDates = array_diff($allDates, $attendedDates, $excuseDates);
         
         // Transform data for calendar
         $calendarData = [];
+        
+        // Add approved excuse documents as special events
+        foreach ($excuseDates as $excuseDate) {
+            $calendarData[] = [
+                'id' => 'excuse_' . str_replace('-', '', $excuseDate),
+                'date' => $excuseDate,
+                'block_type' => 'excuse',
+                'time_in' => null,
+                'time_out' => null,
+                'hours_earned' => 0,
+                'time_in_photo_path' => null,
+                'forgot_timeout_request_id' => null,
+                'forgot_timeout_status' => null,
+                'instructor_response' => null,
+                'is_excused' => true // Flag to identify excused days
+            ];
+        }
         
         // Add actual attendance records
         foreach ($attendanceHistory as $record) {

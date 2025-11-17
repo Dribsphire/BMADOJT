@@ -20,12 +20,14 @@ if (!$authMiddleware->check()) {
     $authMiddleware->redirectToLogin();
 }
 
-if (!$authMiddleware->requireRole('admin')) {
+// Allow both admin role and admin acting as instructor
+$user = $authMiddleware->getCurrentUser();
+$isAdmin = $user && $user->role === 'admin';
+$isActingAsInstructor = isset($_SESSION['acting_role']) && $_SESSION['acting_role'] === 'instructor' && $isAdmin;
+
+if (!$isAdmin) {
     $authMiddleware->redirectToUnauthorized();
 }
-
-// Get current user
-$user = $authMiddleware->getCurrentUser();
 
 // Handle role switching
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -33,14 +35,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     switch ($action) {
         case 'switch_to_instructor':
-            if ($user->section_id) {
+            // Check if admin has section assigned (check both ways)
+            $pdo = \App\Utils\Database::getInstance();
+            
+            // Check if admin has section_id in users table
+            $hasSectionId = !empty($user->section_id);
+            
+            // Also check instructor_sections junction table
+            $stmt = $pdo->prepare("SELECT COUNT(*) FROM instructor_sections WHERE instructor_id = ?");
+            $stmt->execute([$user->id]);
+            $hasJunctionSection = $stmt->fetchColumn() > 0;
+            
+            if ($hasSectionId || $hasJunctionSection) {
                 $_SESSION['acting_role'] = 'instructor';
                 $_SESSION['original_role'] = 'admin';
+                $_SESSION['role'] = 'instructor'; // Temporarily set role to instructor for navigation
                 $_SESSION['success'] = 'Switched to instructor mode. You can now access instructor features.';
-                header('Location: /bmadOJT/public/instructor/dashboard.php');
+                
+                // Determine redirect location
+                $redirect = $_POST['redirect'] ?? '../instructor/dashboard.php';
+                header('Location: ' . $redirect);
             } else {
                 $_SESSION['error'] = 'You must be assigned to a section to switch to instructor mode.';
-                header('Location: /bmadOJT/public/admin/dashboard.php');
+                $redirect = $_POST['redirect'] ?? 'dashboard.php';
+                header('Location: ' . $redirect);
             }
             break;
             
@@ -49,38 +67,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             unset($_SESSION['acting_role']);
             unset($_SESSION['original_role']);
             
-            // Ensure we're back to admin role
-            $_SESSION['role'] = 'admin';
-            
-            // Set success message
-            $_SESSION['success'] = 'Switched back to admin mode.';
-            
-            // Debug: Log the session state
-            error_log("Role switch back - Session state: user_id=" . ($_SESSION['user_id'] ?? 'NOT SET') . 
-                     ", role=" . ($_SESSION['role'] ?? 'NOT SET') . 
-                     ", acting_role=" . ($_SESSION['acting_role'] ?? 'NOT SET') . 
-                     ", original_role=" . ($_SESSION['original_role'] ?? 'NOT SET'));
-            
-            // Force session write and restart
-            session_write_close();
-            session_start();
-            
-            // Add cache control headers to prevent caching
-            header('Cache-Control: no-cache, no-store, must-revalidate');
-            header('Pragma: no-cache');
-            header('Expires: 0');
-            
-            header('Location: /bmadOJT/public/admin/dashboard.php');
+            // Ensure we're back to admin role - get from database
+            $user = $authMiddleware->getCurrentUser();
+            if ($user && $user->role === 'admin') {
+                // Set session role back to admin
+                $_SESSION['role'] = 'admin';
+                
+                // Set success message
+                $_SESSION['success'] = 'Switched back to admin mode.';
+                
+                // Debug: Log the session state
+                error_log("Role switch back - Session state: user_id=" . ($_SESSION['user_id'] ?? 'NOT SET') . 
+                         ", role=" . ($_SESSION['role'] ?? 'NOT SET') . 
+                         ", acting_role=" . ($_SESSION['acting_role'] ?? 'NOT SET') . 
+                         ", original_role=" . ($_SESSION['original_role'] ?? 'NOT SET'));
+                
+                // Force session write
+                session_write_close();
+                
+                // Add cache control headers to prevent caching
+                header('Cache-Control: no-cache, no-store, must-revalidate');
+                header('Pragma: no-cache');
+                header('Expires: 0');
+                
+                // Determine redirect location
+                $redirect = $_POST['redirect'] ?? 'dashboard.php';
+                header('Location: ' . $redirect);
+            } else {
+                $_SESSION['error'] = 'Unable to switch back to admin mode. Please contact system administrator.';
+                $redirect = $_POST['redirect'] ?? 'dashboard.php';
+                header('Location: ' . $redirect);
+            }
             break;
             
         default:
             $_SESSION['error'] = 'Invalid action.';
-            header('Location: /bmadOJT/public/admin/dashboard.php');
+            $redirect = $_POST['redirect'] ?? 'dashboard.php';
+            header('Location: ' . $redirect);
             break;
     }
     exit;
 }
 
-// If not POST, redirect to dashboard
-header('Location: /bmadOJT/public/admin/dashboard.php');
+// If not POST, redirect based on current role
+if ($isActingAsInstructor) {
+    header('Location: ../instructor/dashboard.php');
+} else {
+    header('Location: dashboard.php');
+}
 exit;

@@ -19,6 +19,7 @@ class AdminAccess
         
         // Check if user is authenticated
         if (!$authMiddleware->check()) {
+            error_log("AdminAccess: User not authenticated");
             return false;
         }
         
@@ -33,7 +34,9 @@ class AdminAccess
                                $_SESSION['acting_role'] === 'instructor' && 
                                $user && $user->role === 'admin';
         
-        return $isAdmin || $isActingAsInstructor;
+        $hasAccess = $isAdmin || $isActingAsInstructor;
+        
+        return $hasAccess;
     }
     
     /**

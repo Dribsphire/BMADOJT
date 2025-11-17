@@ -47,18 +47,27 @@ $offset = ($currentPage - 1) * $recordsPerPage;
 // Search parameter
 $searchTerm = isset($_GET['search']) ? trim($_GET['search']) : '';
 
-// Build the base query
+// Build the base query - Check all possible ways instructor can be linked to sections
+// 1. instructor_sections junction table
+// 2. sections.instructor_id (old way)
+// 3. users.section_id (if instructor has section_id set)
 $baseQuery = "
     FROM attendance_records ar
     INNER JOIN users u ON ar.student_id = u.id
     INNER JOIN sections s ON u.section_id = s.id
+    LEFT JOIN instructor_sections is_rel ON s.id = is_rel.section_id
     LEFT JOIN student_profiles sp ON u.id = sp.user_id
-    WHERE s.instructor_id = ? AND ar.time_in IS NOT NULL
+    WHERE (
+        is_rel.instructor_id = ? 
+        OR s.instructor_id = ? 
+        OR (SELECT section_id FROM users WHERE id = ? AND role = 'instructor') = s.id
+    )
+    AND ar.time_in IS NOT NULL
 ";
 
 // Add search conditions if search term is provided
 $searchConditions = "";
-$params = [$user->id];
+$params = [$user->id, $user->id, $user->id]; // Add instructor_id three times for the OR conditions
 
 if (!empty($searchTerm)) {
     $searchConditions = " AND (
@@ -117,6 +126,7 @@ $attendanceRecords = $stmt->fetchAll(PDO::FETCH_ASSOC);
         :root {
             --chmsu-green: #0ea539;
         }
+        
         body {
             font-family: 'Poppins', sans-serif;
             background-color: #f8f9fa;
@@ -181,17 +191,9 @@ $attendanceRecords = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         <div>
                             <h2 class="mb-1">Attendance</h2>
                         </div>
-                        <div class="d-flex gap-2">
-                            <button class="btn btn-primary" onclick="exportToCSV()">
-                                <i class="bi bi-download me-1" style="color: white;"></i>Export CSV
-                            </button>
-                            <button class="btn btn-primary" onclick="refreshPage()">
-                                <i class="bi bi-arrow-clockwise me-1" style="color: white;"></i>Refresh
-                            </button>
-                        </div>
                     </div>
                 </div>
-            </div
+            </div>
 
             <!-- Summary Stats -->
             <div class="row mb-4">
@@ -328,14 +330,14 @@ $attendanceRecords = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                         </td>
                                         <td>
                                             <?php if ($record['time_in']): ?>
-                                                <span class="text-success"><?php echo date('H:i', strtotime($record['time_in'])); ?></span>
+                                                <span class="text-success"><?php echo date('g:i A', strtotime($record['time_in'])); ?></span>
                                             <?php else: ?>
                                                 <span class="text-muted">-</span>
                                             <?php endif; ?>
                                         </td>
                                         <td>
                                             <?php if ($record['time_out']): ?>
-                                                <span class="text-success"><?php echo date('H:i', strtotime($record['time_out'])); ?></span>
+                                                <span class="text-success"><?php echo date('g:i A', strtotime($record['time_out'])); ?></span>
                                             <?php else: ?>
                                                 <span class="text-warning">Pending</span>
                                             <?php endif; ?>

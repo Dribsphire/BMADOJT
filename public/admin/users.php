@@ -28,8 +28,14 @@ switch ($action) {
     case 'assign_section':
         $controller->assignSection();
         break;
+    case 'change_password':
+        $controller->changePassword();
+        break;
     case 'delete':
         $controller->delete();
+        break;
+    case 'archive_all':
+        $controller->archiveAll();
         break;
     default:
         $controller->index();

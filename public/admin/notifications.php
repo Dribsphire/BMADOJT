@@ -47,9 +47,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $templates = new EmailTemplates();
             
             $recipient_type = $_POST['recipient_type'];
-            $template_name = $_POST['template_name'];
-            $subject = $_POST['subject'];
-            $message = $_POST['message'];
+            $template_name = $_POST['template_name'] ?? 'custom';
+            $subject = $_POST['subject'] ?? '';
+            $message = $_POST['message'] ?? '';
             $custom_variables = json_decode($_POST['custom_variables'] ?? '{}', true);
             
             // Ensure custom_variables is an array
@@ -153,6 +153,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 // Get recipients for dropdown
 function getRecipientsByType($pdo, $type) {
     switch ($type) {
+        case 'specific':
+            if (!empty($_POST['specific_users']) && is_array($_POST['specific_users'])) {
+                $placeholders = str_repeat('?,', count($_POST['specific_users']) - 1) . '?';
+                $stmt = $pdo->prepare("
+                    SELECT id, email, full_name, school_id, section_id
+                    FROM users 
+                    WHERE id IN ($placeholders) AND email IS NOT NULL
+                    ORDER BY full_name
+                ");
+                $stmt->execute($_POST['specific_users']);
+                return $stmt->fetchAll(PDO::FETCH_ASSOC);
+            }
+            return [];
+            
         case 'students':
             $stmt = $pdo->query("
                 SELECT id, email, full_name, school_id, section_id
@@ -178,23 +192,13 @@ function getRecipientsByType($pdo, $type) {
             ");
             break;
         default:
+            // If we get here, it's an unknown recipient type
             return [];
     }
     
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
-// Get notification history
-$stmt = $pdo->prepare("
-    SELECT al.*, u.full_name as admin_name
-    FROM activity_logs al
-    LEFT JOIN users u ON al.user_id = u.id
-    WHERE al.action = 'admin_notification_sent'
-    ORDER BY al.created_at DESC
-    LIMIT 20
-");
-$stmt->execute();
-$notification_history = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Get email templates
 $templates = new EmailTemplates();
@@ -285,7 +289,7 @@ $available_templates = [
 
         <div class="row">
             <!-- Send Notification Form -->
-            <div class="col-md-8">
+            <div class="col-12">
                 <div class="card notification-card mb-4">
                     <div class="card-header bg-primary text-white">
                         <h5 class="mb-0">
@@ -369,59 +373,6 @@ $available_templates = [
                 </div>
             </div>
 
-            <!-- Quick Actions & History -->
-            <div class="col-md-4">
-                <!-- Quick Actions -->
-                <div class="card notification-card mb-4">
-                    <div class="card-header bg-success text-white">
-                        <h6 class="mb-0">
-                            <i class="bi bi-lightning me-2"></i>Quick Actions
-                        </h6>
-                    </div>
-                    <div class="card-body">
-                        <div class="d-grid gap-2">
-                            <button class="btn btn-outline-primary btn-sm" onclick="quickNotification('students', 'compliance_reminder')">
-                                <i class="bi bi-people me-1"></i>Remind Students About Documents
-                            </button>
-                            <button class="btn btn-outline-warning btn-sm" onclick="quickNotification('instructors', 'instructor_notification')">
-                                <i class="bi bi-person-badge me-1"></i>Notify Instructors
-                            </button>
-                            <button class="btn btn-outline-info btn-sm" onclick="quickNotification('all', 'system_announcement')">
-                                <i class="bi bi-megaphone me-1"></i>System Announcement
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Notification History -->
-                <div class="card notification-card">
-                    <div class="card-header bg-secondary text-white">
-                        <h6 class="mb-0">
-                            <i class="bi bi-clock-history me-2"></i>Recent Notifications
-                        </h6>
-                    </div>
-                    <div class="card-body notification-history">
-                        <?php if (empty($notification_history)): ?>
-                            <p class="text-muted">No notifications sent yet.</p>
-                        <?php else: ?>
-                            <?php foreach ($notification_history as $notification): ?>
-                                <div class="border-bottom pb-2 mb-2">
-                                    <div class="d-flex justify-content-between">
-                                        <small class="text-muted">
-                                            <?= date('M j, Y g:i A', strtotime($notification['created_at'])) ?>
-                                        </small>
-                                        <small class="text-success">
-                                            <i class="bi bi-check-circle me-1"></i>Sent
-                                        </small>
-                                    </div>
-                                    <div class="fw-bold"><?= htmlspecialchars($notification['description']) ?></div>
-                                    <small class="text-muted">by <?= htmlspecialchars($notification['admin_name']) ?></small>
-                                </div>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            </div>
         </div>
     </main>
 
@@ -516,14 +467,6 @@ $available_templates = [
             }
         });
 
-        // Quick notification function
-        function quickNotification(recipientType, templateName) {
-            document.getElementById('recipient_type').value = recipientType;
-            document.getElementById('template_name').value = templateName;
-            
-            // Update recipient count
-            document.getElementById('recipient_type').dispatchEvent(new Event('change'));
-        }
 
         // Test email function
         function testEmail() {

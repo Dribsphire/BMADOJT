@@ -9,6 +9,7 @@ require_once '../../vendor/autoload.php';
 use App\Services\FileUploadService;
 use App\Middleware\AuthMiddleware;
 use App\Utils\Database;
+use App\Utils\AdminAccess;
 
 // Start session
 session_start();
@@ -22,9 +23,8 @@ if (!$authMiddleware->check()) {
     $authMiddleware->redirectToLogin();
 }
 
-if (!$authMiddleware->requireRole('admin')) {
-    $authMiddleware->redirectToUnauthorized();
-}
+// Check admin access (including acting as instructor)
+AdminAccess::requireAdminAccess();
 
 // Get current user
 $user = $authMiddleware->getCurrentUser();
@@ -243,26 +243,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <?php include 'sidebar.php'; ?>
             <!-- Main Content -->
             <main>
-                    <!-- Navigation -->
-            <nav class="navbar navbar-expand-lg navbar-dark">
-                <div class="container-fluid">
-                    <a class="navbar-brand" href="#">
-                        <i class="bi bi-mortarboard me-2"></i>OJT Route
-                    </a>
-                    <div class="navbar-nav ms-auto">
-                        <span class="navbar-text me-3">
-                            Welcome, <?= htmlspecialchars($user->getDisplayName()) ?>
-                        </span>
-                        <a class="nav-link me-2" href="profile.php">
-                            <i class="bi bi-person me-1"></i>My Profile
-                        </a>
-                        <button type="button" class="btn btn-outline-light btn-sm" 
-                                data-bs-toggle="modal" data-bs-target="#logoutModal">
-                            <i class="bi bi-box-arrow-right me-1"></i>Logout
-                        </button>
-                    </div>
-                </div>
-            </nav>
                 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
                     <h1 class="h2">My Profile</h1>
                 </div>

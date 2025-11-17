@@ -1,3 +1,129 @@
+<?php
+
+/**
+ * Section Management
+ * OJT Route - Admin section management page
+ */
+
+require_once '../../vendor/autoload.php';
+
+use App\Services\AuthenticationService;
+use App\Services\FileUploadService;
+use App\Middleware\AuthMiddleware;
+use App\Utils\Database;
+use App\Utils\AdminAccess;
+
+// Start session if not already started
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+// Initialize authentication
+$authService = new AuthenticationService();
+$authMiddleware = new AuthMiddleware();
+
+// Check authentication and authorization
+if (!$authMiddleware->check()) {
+    $authMiddleware->redirectToLogin();
+}
+
+
+// Check admin access (including acting as instructor)
+AdminAccess::requireAdminAccess();
+
+// Get current user
+$user = $authMiddleware->getCurrentUser();
+
+// Get database connection
+$pdo = Database::getInstance();
+
+// Handle section actions
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = $_POST['action'] ?? '';
+    
+    switch ($action) {
+        case 'create_section':
+            $sectionCode = $_POST['section_code'] ?? '';
+            $sectionName = $_POST['section_name'] ?? '';
+            $instructorId = $_POST['instructor_id'] ?? null;
+            
+            if ($sectionCode && $sectionName) {
+                try {
+                    $stmt = $pdo->prepare("INSERT INTO sections (section_code, section_name, instructor_id) VALUES (?, ?, ?)");
+                    $stmt->execute([$sectionCode, $sectionName, $instructorId]);
+                    $_SESSION['success'] = 'Section created successfully.';
+                } catch (Exception $e) {
+                    $_SESSION['error'] = 'Error creating section: ' . $e->getMessage();
+                }
+            }
+            break;
+            
+        case 'update_section':
+            $sectionId = $_POST['section_id'] ?? '';
+            $sectionCode = $_POST['section_code'] ?? '';
+            $sectionName = $_POST['section_name'] ?? '';
+            $instructorId = $_POST['instructor_id'] ?? null;
+            
+            if ($sectionId && $sectionCode && $sectionName) {
+                try {
+                    $stmt = $pdo->prepare("UPDATE sections SET section_code = ?, section_name = ?, instructor_id = ? WHERE id = ?");
+                    $stmt->execute([$sectionCode, $sectionName, $instructorId, $sectionId]);
+                    $_SESSION['success'] = 'Section updated successfully.';
+                } catch (Exception $e) {
+                    $_SESSION['error'] = 'Error updating section: ' . $e->getMessage();
+                }
+            }
+            break;
+            
+        case 'delete_section':
+            $sectionId = $_POST['section_id'] ?? '';
+            if ($sectionId) {
+                try {
+                    $stmt = $pdo->prepare("DELETE FROM sections WHERE id = ?");
+                    $stmt->execute([$sectionId]);
+                    $_SESSION['success'] = 'Section deleted successfully.';
+                } catch (Exception $e) {
+                    $_SESSION['error'] = 'Error deleting section: ' . $e->getMessage();
+                }
+            }
+            break;
+    }
+    
+    // Redirect to prevent form resubmission
+    header('Location: sections_view.php');
+    exit;
+}
+
+// Get sections with student count and assigned instructor (one instructor per section)
+// Check both junction table and old users.section_id as fallback
+// Include admins who can act as instructors
+$sections = $pdo->query("
+    SELECT s.*, 
+           COALESCE(u_junction.full_name, u_old.full_name) as instructor_name,
+           COALESCE(u_junction.school_id, u_old.school_id) as instructor_school_id,
+           COALESCE(u_junction.profile_picture, u_old.profile_picture) as instructor_profile_picture,
+           COUNT(DISTINCT st.id) as student_count
+    FROM sections s 
+    LEFT JOIN instructor_sections is_rel ON s.id = is_rel.section_id
+    LEFT JOIN users u_junction ON is_rel.instructor_id = u_junction.id
+    LEFT JOIN users u_old ON s.id = u_old.section_id AND (u_old.role = 'instructor' OR u_old.role = 'admin')
+    LEFT JOIN users st ON st.section_id = s.id AND st.role = 'student'
+    GROUP BY s.id, u_junction.full_name, u_junction.school_id, u_junction.profile_picture, u_old.full_name, u_old.school_id, u_old.profile_picture
+    ORDER BY s.section_name
+")->fetchAll();
+
+// Initialize FileUploadService for profile pictures
+$fileUploadService = new FileUploadService();
+
+// Get instructors for dropdown - include both instructors and admins (admins can act as instructors)
+$instructors = $pdo->query("
+    SELECT id, full_name, school_id, role 
+    FROM users 
+    WHERE role = 'instructor' OR role = 'admin'
+    ORDER BY role DESC, full_name
+")->fetchAll();
+
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -38,36 +164,71 @@
             padding: 0.25rem 0.5rem;
             font-size: 0.875rem;
         }
+        
+        /* Fix modal positioning and z-index issues */
+        .modal {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            z-index: 1055 !important;
+            display: none;
+            width: 100%;
+            height: 100%;
+            overflow-x: hidden;
+            overflow-y: auto;
+            outline: 0;
+        }
+        
+        .modal.show {
+            display: block !important;
+        }
+        
+        .modal-backdrop {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            z-index: 1050 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            background-color: rgba(0, 0, 0, 0.5) !important;
+        }
+        
+        .modal-backdrop.show {
+            opacity: 0.5;
+        }
+        
+        .modal-dialog {
+            position: relative;
+            width: auto;
+            margin: 1.75rem auto;
+            pointer-events: none;
+            z-index: 1055 !important;
+        }
+        
+        .modal-content {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            pointer-events: auto;
+            background-color: #fff;
+            background-clip: padding-box;
+            border: 1px solid rgba(0, 0, 0, 0.2);
+            border-radius: 0.3rem;
+            outline: 0;
+            z-index: 1055 !important;
+        }
+        
+        /* Ensure sidebar stays below modals */
+        #sidebar {
+            z-index: 1000 !important;
+        }
     </style>
 </head>
 <body>
     <?php include 'sidebar.php'; ?>
     <main>
-        <!-- Navigation -->
-        <nav class="navbar navbar-expand-lg navbar-dark" style="background-color: #0ea539;">
-            <div class="container-fluid">
-                <a class="navbar-brand" href="dashboard.php">
-                    <i class="bi bi-mortarboard me-2"></i>OJT Route
-                </a>
-                <div class="navbar-nav ms-auto">
-                    <a class="nav-link" href="dashboard.php">
-                        <i class="bi bi-house me-1"></i>Dashboard
-                    </a>
-                    <a class="nav-link" href="users.php">
-                        <i class="bi bi-people me-1"></i>Users
-                    </a>
-                    <a class="nav-link active" href="sections.php">
-                        <i class="bi bi-collection me-1"></i>Sections
-                    </a>
-                    <a class="nav-link" href="profile.php">
-                        <i class="bi bi-person me-1"></i>My Profile
-                    </a>
-                    <a class="nav-link" href="../logout.php">
-                        <i class="bi bi-box-arrow-right me-1"></i>Logout
-                    </a>
-                </div>
-            </div>
-        </nav>
+    
         
         <!-- Main Content -->
         <div class="container-fluid py-4">
@@ -75,10 +236,10 @@
                 <div class="col-12">
                     <div class="d-flex justify-content-between align-items-center mb-4">
                         <h2>
-                            <i class="bi bi-collection me-2"></i>Section Management
+                            <i class="bi bi-collection me-2" ></i>Section Management
                         </h2>
-                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createSectionModal">
-                            <i class="bi bi-plus-circle me-2"></i>Add Section
+                        <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#createSectionModal">
+                            <i class="bi bi-plus-circle me-2" style="color:white;"></i>Add Section
                         </button>
                     </div>
                     
@@ -109,70 +270,94 @@
                     </div>
                     
                     <!-- Sections Table -->
-                    <div class="card">
-                        <div class="card-body">
+                    <div class="card shadow-sm border-0">
+                        <div class="card-body p-0">
                             <div class="table-responsive">
-                                <table class="table table-hover">
-                                    <thead class="table-dark">
+                                <table class="table table-hover align-middle mb-0">
+                                    <thead class="table-light border-bottom">
                                         <tr>
-                                            <th>Section Code</th>
-                                            <th>Section Name</th>
-                                            <th>Assigned Instructor</th>
-                                            <th>Student Count</th>
-                                            <th>Created</th>
-                                            <th>Actions</th>
+                                            <th class="fw-semibold py-3 px-4">Section Code</th>
+                                            <th class="fw-semibold py-3 px-4">Section Name</th>
+                                            <th class="fw-semibold py-3 px-4">Assigned Instructor</th>
+                                            <th class="fw-semibold py-3 px-4 text-center">Students</th>
+                                            <th class="fw-semibold py-3 px-4 text-center">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         <?php if (empty($sections)): ?>
                                             <tr>
-                                                <td colspan="6" class="text-center text-muted py-4">
-                                                    <i class="bi bi-inbox me-2"></i>No sections found
+                                                <td colspan="6" class="text-center text-muted py-5">
+                                                    <i class="bi bi-inbox me-2 fs-4"></i>
+                                                    <div class="mt-2">No sections found</div>
                                                 </td>
                                             </tr>
                                         <?php else: ?>
                                             <?php foreach ($sections as $section): ?>
-                                                <tr>
-                                                    <td>
-                                                        <strong><?= htmlspecialchars($section['section_code']) ?></strong>
-                                                    </td>
-                                                    <td>
-                                                        <?= htmlspecialchars($section['section_name'] ?: 'No name') ?>
-                                                    </td>
-                                                    <td>
-                                                        <?php if ($section['instructor_name']): ?>
-                                                            <div>
-                                                                <strong><?= htmlspecialchars($section['instructor_name']) ?></strong>
-                                                                <br>
-                                                                <small class="text-muted"><?= htmlspecialchars($section['instructor_school_id']) ?></small>
-                                                            </div>
-                                                        <?php else: ?>
-                                                            <span class="text-muted">No instructor assigned</span>
-                                                        <?php endif; ?>
-                                                    </td>
-                                                    <td>
-                                                        <span class="badge bg-primary student-count-badge" 
-                                                              onclick="viewStudents(<?= $section['id'] ?>, '<?= htmlspecialchars($section['section_code']) ?>')">
-                                                            <?= $section['student_count'] ?> students
+                                                <tr class="border-bottom">
+                                                    <td class="px-4 py-3">
+                                                        <span class="badge bg-success bg-gradient fs-6 px-3 py-2">
+                                                            <i class="bi bi-bookmark me-1" style="color:white;"></i>
+                                                            <?= htmlspecialchars($section['section_code']) ?>
                                                         </span>
                                                     </td>
-                                                    <td>
-                                                        <small class="text-muted">
-                                                            <?= date('M j, Y', strtotime($section['created_at'])) ?>
-                                                        </small>
+                                                    <td class="px-4 py-3">
+                                                        <div class="fw-medium text-dark">
+                                                            <?= htmlspecialchars($section['section_name'] ?: 'No name') ?>
+                                                        </div>
                                                     </td>
-                                                    <td>
+                                                    <td class="px-4 py-3">
+                                                        <?php if ($section['instructor_name']): 
+                                                            $profilePictureUrl = $fileUploadService->getProfilePictureUrl($section['instructor_profile_picture'] ?? null);
+                                                        ?>
+                                                            <div class="d-flex align-items-center">
+                                                                <img src="<?= htmlspecialchars($profilePictureUrl) ?>" 
+                                                                     alt="<?= htmlspecialchars($section['instructor_name']) ?>"
+                                                                     class="rounded-circle me-3"
+                                                                     style="width: 40px; height: 40px; object-fit: cover; border: 2px solid #e9ecef;">
+                                                                <div>
+                                                                    <div class="fw-semibold text-dark">
+                                                                        <?= htmlspecialchars($section['instructor_name']) ?>
+                                                                    </div>
+                                                                    <small class="text-muted">
+                                                                        <?= htmlspecialchars($section['instructor_school_id'] ?? 'N/A') ?>
+                                                                    </small>
+                                                                </div>
+                                                            </div>
+                                                        <?php else: ?>
+                                                            <div class="d-flex align-items-center text-muted">
+                                                                <div class="rounded-circle bg-light d-flex align-items-center justify-content-center me-3"
+                                                                     style="width: 40px; height: 40px;">
+                                                                    <i class="bi bi-person-x text-muted"></i>
+                                                                </div>
+                                                                <span>No instructor assigned</span>
+                                                            </div>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                    <td class="px-4 py-3 text-center">
+                                                        <span class="badge bg-success bg-success fs-6 px-3 py-2 cursor-pointer" 
+                                                              onclick='viewStudents(<?= $section['id'] ?>, <?= str_replace("'", "\\'", json_encode($section['section_code'])) ?>)'
+                                                              style="cursor: pointer;">
+                                                            <i class="bi bi-people me-1" style="color:white;"></i>
+                                                            <?= $section['student_count'] ?>
+                                                        </span>
+                                                    </td>
+                                                    <td class="px-4 py-3">
                                                         <div class="btn-group" role="group">
-                                                            <button class="btn btn-outline-primary btn-sm btn-action" 
-                                                                    onclick="editSection(<?= htmlspecialchars(json_encode($section)) ?>)">
+                                                            <button class="btn btn-sm btn-outline-primary border-0 shadow-sm" 
+                                                                    onclick='editSection(<?= str_replace("'", "\\'", json_encode($section)) ?>)'
+                                                                    title="Edit Section"
+                                                                    style="border-radius: 6px 0 0 6px;">
                                                                 <i class="bi bi-pencil"></i>
                                                             </button>
-                                                            <button class="btn btn-outline-info btn-sm btn-action" 
-                                                                    onclick="assignInstructor(<?= $section['id'] ?>, '<?= htmlspecialchars($section['section_code']) ?>', <?= $section['instructor_name'] ? 'true' : 'false' ?>)">
+                                                            <button class="btn btn-sm btn-outline-info border-0 shadow-sm" 
+                                                                    onclick='assignInstructor(<?= $section['id'] ?>, <?= str_replace("'", "\\'", json_encode($section['section_code'])) ?>, <?= $section['instructor_name'] ? 'true' : 'false' ?>)'
+                                                                    title="Assign Instructor">
                                                                 <i class="bi bi-person-plus"></i>
                                                             </button>
-                                                            <button class="btn btn-outline-danger btn-sm btn-action" 
-                                                                    onclick="deleteSection(<?= $section['id'] ?>, '<?= htmlspecialchars($section['section_code']) ?>', <?= $section['student_count'] ?>)">
+                                                            <button class="btn btn-sm btn-outline-danger border-0 shadow-sm" 
+                                                                    onclick='deleteSection(<?= $section['id'] ?>, <?= str_replace("'", "\\'", json_encode($section['section_code'])) ?>, <?= $section['student_count'] ?>)'
+                                                                    title="Delete Section"
+                                                                    style="border-radius: 0 6px 6px 0;">
                                                                 <i class="bi bi-trash"></i>
                                                             </button>
                                                         </div>
@@ -235,6 +420,7 @@
                                     <option value="<?= $instructor['id'] ?>">
                                         <?= htmlspecialchars($instructor['full_name']) ?> 
                                         (<?= htmlspecialchars($instructor['school_id']) ?>)
+                                        <?= $instructor['role'] === 'admin' ? ' [Admin]' : '' ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
@@ -242,7 +428,7 @@
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Create Section</button>
+                        <button type="submit" class="btn btn-success">Create Section</button>
                     </div>
                 </form>
             </div>
@@ -298,6 +484,7 @@
                                     <option value="<?= $instructor['id'] ?>">
                                         <?= htmlspecialchars($instructor['full_name']) ?> 
                                         (<?= htmlspecialchars($instructor['school_id']) ?>)
+                                        <?= $instructor['role'] === 'admin' ? ' [Admin]' : '' ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
@@ -365,6 +552,40 @@
     <link rel="stylesheet" href="../css/minimal-modal-fix.css">
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="../js/minimal-modal-fix.js"></script>
+    <script>
+        // Fix modal positioning when opened
+        document.addEventListener('show.bs.modal', function(e) {
+            const modal = e.target;
+            modal.style.position = 'fixed';
+            modal.style.top = '0';
+            modal.style.left = '0';
+            modal.style.zIndex = '1055';
+        });
+        
+        document.addEventListener('shown.bs.modal', function(e) {
+            const modal = e.target;
+            const modalDialog = modal.querySelector('.modal-dialog');
+            if (modalDialog) {
+                modalDialog.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            
+            let backdrop = document.querySelector('.modal-backdrop');
+            if (!backdrop) {
+                backdrop = document.createElement('div');
+                backdrop.className = 'modal-backdrop fade show';
+                document.body.appendChild(backdrop);
+            }
+            backdrop.style.position = 'fixed';
+            backdrop.style.top = '0';
+            backdrop.style.left = '0';
+            backdrop.style.zIndex = '1050';
+        });
+        
+        document.addEventListener('hidden.bs.modal', function(e) {
+            const backdrops = document.querySelectorAll('.modal-backdrop');
+            backdrops.forEach(backdrop => backdrop.remove());
+        });
+    </script>
     <script>
         // Edit section
         function editSection(section) {

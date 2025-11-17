@@ -1,4 +1,7 @@
 <?php
+// Start output buffering as early as possible
+ob_start();
+
 require_once '../../vendor/autoload.php';
 
 use App\Services\DocumentService;
@@ -14,6 +17,549 @@ if (!$auth->check() || !$auth->requireRole('student')) {
 
 // Get data
 $pdo = Database::getInstance();
+
+// Helper functions for weekly/monthly reports (needed for both POST and normal page loads)
+if (!function_exists('getCurrentWeekPeriod')) {
+    function getCurrentWeekPeriod() {
+        $now = new DateTime();
+        return $now->format('o') . '-W' . str_pad($now->format('W'), 2, '0', STR_PAD_LEFT);
+    }
+}
+
+if (!function_exists('getCurrentMonthPeriod')) {
+    function getCurrentMonthPeriod() {
+        return date('Y-m');
+    }
+}
+
+if (!function_exists('canSubmitExcuseDocument')) {
+    function canSubmitExcuseDocument($pdo, $studentId) {
+        try {
+            $stmt = $pdo->query("SHOW TABLES LIKE 'student_reports'");
+            if ($stmt->rowCount() === 0) {
+                return ['canSubmit' => false, 'message' => 'Reports system not initialized. Please contact administrator.'];
+            }
+        } catch (Exception $e) {
+            return ['canSubmit' => false, 'message' => 'Reports system not available. Please contact administrator.'];
+        }
+        
+        // Check if excuse is in the report_type enum
+        $stmt = $pdo->query("SHOW COLUMNS FROM student_reports WHERE Field = 'report_type'");
+        $column = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($column && strpos($column['Type'], 'excuse') === false) {
+            return ['canSubmit' => false, 'message' => 'Excuse document feature not available. Please contact administrator.'];
+        }
+        
+        // Excuse documents can be submitted multiple times (one per date)
+        return [
+            'canSubmit' => true, 
+            'message' => 'Submit an excuse document for a specific date.'
+        ];
+    }
+}
+
+if (!function_exists('canSubmitWeeklyReport')) {
+    function canSubmitWeeklyReport($pdo, $studentId) {
+        try {
+            $stmt = $pdo->query("SHOW TABLES LIKE 'student_reports'");
+            if ($stmt->rowCount() === 0) {
+                return ['canSubmit' => false, 'message' => 'Reports system not initialized. Please contact administrator.'];
+            }
+        } catch (Exception $e) {
+            return ['canSubmit' => false, 'message' => 'Reports system not available. Please contact administrator.'];
+        }
+        
+        $weekPeriod = getCurrentWeekPeriod();
+        $now = new DateTime();
+        $dayOfWeek = (int)$now->format('N');
+        $monday = clone $now;
+        $monday->modify('-' . ($dayOfWeek - 1) . ' days');
+        $monday->setTime(0, 0, 0);
+        $sunday = clone $monday;
+        $sunday->modify('+6 days');
+        $sunday->setTime(23, 59, 59);
+        
+        $stmt = $pdo->prepare("
+            SELECT id, submitted_at, status 
+            FROM student_reports 
+            WHERE student_id = ? 
+            AND report_type = 'weekly'
+            AND report_period = ?
+            LIMIT 1
+        ");
+        $stmt->execute([$studentId, $weekPeriod]);
+        $existingSubmission = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($existingSubmission) {
+            $submittedDate = new DateTime($existingSubmission['submitted_at']);
+            $status = $existingSubmission['status'];
+            
+            if ($status === 'revision_required' || $status === 'rejected') {
+                return [
+                    'canSubmit' => true, 
+                    'message' => 'You can resubmit your weekly report for this week (Week of ' . $monday->format('M d') . ' - ' . $sunday->format('M d, Y') . ').',
+                    'submittedDate' => $submittedDate->format('Y-m-d H:i:s'),
+                    'reportPeriod' => $weekPeriod,
+                    'existingReportId' => $existingSubmission['id']
+                ];
+            } else {
+                return [
+                    'canSubmit' => false, 
+                    'message' => 'Weekly report of ' . $monday->format('M d') . ' - ' . $sunday->format('M d, Y') . '',
+                    'submittedDate' => $submittedDate->format('Y-m-d H:i:s'),
+                    'reportPeriod' => $weekPeriod
+                ];
+            }
+        }
+        
+        return [
+            'canSubmit' => true, 
+            'message' => 'You can submit your weekly report for this week (Week of ' . $monday->format('M d') . ' - ' . $sunday->format('M d, Y') . ').',
+            'weekStart' => $monday->format('Y-m-d'),
+            'weekEnd' => $sunday->format('Y-m-d'),
+            'reportPeriod' => $weekPeriod
+        ];
+    }
+}
+
+if (!function_exists('canSubmitMonthlyReport')) {
+    function canSubmitMonthlyReport($pdo, $studentId) {
+        try {
+            $stmt = $pdo->query("SHOW TABLES LIKE 'student_reports'");
+            if ($stmt->rowCount() === 0) {
+                return ['canSubmit' => false, 'message' => 'Reports system not initialized. Please contact administrator.'];
+            }
+        } catch (Exception $e) {
+            return ['canSubmit' => false, 'message' => 'Reports system not available. Please contact administrator.'];
+        }
+        
+        $monthPeriod = getCurrentMonthPeriod();
+        $now = new DateTime();
+        
+        $stmt = $pdo->prepare("
+            SELECT id, submitted_at, status 
+            FROM student_reports 
+            WHERE student_id = ? 
+            AND report_type = 'monthly'
+            AND report_period = ?
+            LIMIT 1
+        ");
+        $stmt->execute([$studentId, $monthPeriod]);
+        $existingSubmission = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($existingSubmission) {
+            $submittedDate = new DateTime($existingSubmission['submitted_at']);
+            $status = $existingSubmission['status'];
+            
+            if ($status === 'revision_required' || $status === 'rejected') {
+                return [
+                    'canSubmit' => true, 
+                    'message' => 'You can resubmit your monthly report for ' . $now->format('F Y') . '.',
+                    'submittedDate' => $submittedDate->format('Y-m-d H:i:s'),
+                    'reportPeriod' => $monthPeriod,
+                    'existingReportId' => $existingSubmission['id']
+                ];
+            } else {
+                return [
+                    'canSubmit' => false, 
+                    'message' => 'Monthly report for ' . $now->format('F Y') . '',
+                    'submittedDate' => $submittedDate->format('Y-m-d H:i:s'),
+                    'reportPeriod' => $monthPeriod
+                ];
+            }
+        }
+        
+        return [
+            'canSubmit' => true, 
+            'message' => 'You can submit your monthly report for ' . $now->format('F Y') . '.',
+            'monthStart' => $now->format('Y-m-01'),
+            'monthEnd' => $now->format('Y-m-t'),
+            'reportPeriod' => $monthPeriod
+        ];
+    }
+}
+
+// Handle document submission FIRST (before any other output)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'submit_document') {
+    // Suppress error display for clean JSON response
+    error_reporting(E_ALL);
+    ini_set('display_errors', 0);
+    ini_set('log_errors', 1);
+    
+    try {
+        $documentId = $_POST['documentId'] ?? '';
+        
+        if (empty($documentId)) {
+            throw new Exception('Document ID is required');
+        }
+        
+        // Get user section (needed for regular documents)
+        $stmt = $pdo->prepare("SELECT section_id FROM users WHERE id = ?");
+        $stmt->execute([$_SESSION['user_id']]);
+        $sectionId = $stmt->fetchColumn();
+        
+        // Check if this is a weekly, monthly, or excuse report submission
+        $isWeeklyReport = false;
+        $isMonthlyReport = false;
+        $isExcuseDocument = false;
+        $reportType = null;
+        $reportPeriod = null;
+        $excuseDate = null;
+        
+        // Check if student_reports table exists
+        $stmt = $pdo->query("SHOW TABLES LIKE 'student_reports'");
+        $reportsTableExists = $stmt->rowCount() > 0;
+        
+        if (!$reportsTableExists) {
+            throw new Exception('Reports system not initialized. Please contact administrator.');
+        }
+        
+        // If documentId is a string (report type), it's a weekly, monthly, or excuse report
+        if (!is_numeric($documentId)) {
+            if ($documentId === 'weekly_report' || $documentId === 'weekly') {
+                $isWeeklyReport = true;
+                $reportType = 'weekly';
+                $reportPeriod = getCurrentWeekPeriod();
+            } elseif ($documentId === 'monthly_report' || $documentId === 'monthly') {
+                $isMonthlyReport = true;
+                $reportType = 'monthly';
+                $reportPeriod = getCurrentMonthPeriod();
+            } elseif ($documentId === 'excuse_document' || $documentId === 'excuse') {
+                $isExcuseDocument = true;
+                $reportType = 'excuse';
+                // For excuse documents, use the excuse date as the period
+                $excuseDate = $_POST['excuseDate'] ?? null;
+                if (empty($excuseDate)) {
+                    throw new Exception('Excuse date is required');
+                }
+                // Validate date format
+                $dateObj = DateTime::createFromFormat('Y-m-d', $excuseDate);
+                if (!$dateObj || $dateObj->format('Y-m-d') !== $excuseDate) {
+                    throw new Exception('Invalid excuse date format');
+                }
+                $reportPeriod = $excuseDate; // Use date as period for excuse documents
+            } else {
+                // Regular document - find the actual document ID
+                $documentType = $documentId;
+                if ($sectionId) {
+                    $stmt = $pdo->prepare("SELECT id, document_type FROM documents WHERE document_type = ? AND (uploaded_for_section = ? OR uploaded_for_section IS NULL) AND uploaded_by = 1 ORDER BY uploaded_for_section DESC LIMIT 1");
+                    $stmt->execute([$documentType, $sectionId]);
+                } else {
+                    $stmt = $pdo->prepare("SELECT id, document_type FROM documents WHERE document_type = ? AND uploaded_for_section IS NULL AND uploaded_by = 1 LIMIT 1");
+                    $stmt->execute([$documentType]);
+                }
+                $doc = $stmt->fetch(PDO::FETCH_ASSOC);
+                
+                if (!$doc) {
+                    throw new Exception('Document template not found. Please contact your instructor.');
+                }
+                $documentId = $doc['id'];
+            }
+        } else {
+            // Numeric ID - verify the document exists (for regular documents)
+            $stmt = $pdo->prepare("SELECT id, document_type FROM documents WHERE id = ?");
+            $stmt->execute([$documentId]);
+            $doc = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$doc) {
+                throw new Exception('Document not found. Please contact your instructor.');
+            }
+        }
+        
+        // Validate weekly report submission (only one per week)
+        if ($isWeeklyReport) {
+            $weeklyStatus = canSubmitWeeklyReport($pdo, $_SESSION['user_id']);
+            if (!$weeklyStatus['canSubmit']) {
+                throw new Exception($weeklyStatus['message']);
+            }
+            $reportPeriod = $weeklyStatus['reportPeriod'];
+        }
+        
+        // Validate monthly report submission (only one per month)
+        if ($isMonthlyReport) {
+            $monthlyStatus = canSubmitMonthlyReport($pdo, $_SESSION['user_id']);
+            if (!$monthlyStatus['canSubmit']) {
+                throw new Exception($monthlyStatus['message']);
+            }
+            $reportPeriod = $monthlyStatus['reportPeriod'];
+        }
+        
+        // Validate excuse document submission
+        if ($isExcuseDocument) {
+            $excuseStatus = canSubmitExcuseDocument($pdo, $_SESSION['user_id']);
+            if (!$excuseStatus['canSubmit']) {
+                throw new Exception($excuseStatus['message']);
+            }
+            // Check if student already submitted an excuse for this date
+            $stmt = $pdo->prepare("
+                SELECT id, status 
+                FROM student_reports 
+                WHERE student_id = ? 
+                AND report_type = 'excuse'
+                AND excuse_date = ?
+                LIMIT 1
+            ");
+            $stmt->execute([$_SESSION['user_id'], $excuseDate]);
+            $existingExcuse = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($existingExcuse) {
+                $status = $existingExcuse['status'];
+                if ($status === 'revision_required' || $status === 'rejected') {
+                    // Allow resubmission
+                } else {
+                    throw new Exception('You have already submitted an excuse document for ' . date('F d, Y', strtotime($excuseDate)) . '.');
+                }
+            }
+        }
+        
+        // Check if file was uploaded
+        if (!isset($_FILES['documentFile']) || $_FILES['documentFile']['error'] !== UPLOAD_ERR_OK) {
+            throw new Exception('Please select a file to upload');
+        }
+        
+        $file = $_FILES['documentFile'];
+        
+        // Validate file size (10MB limit)
+        if ($file['size'] > 10 * 1024 * 1024) {
+            throw new Exception('File size must be less than 10MB');
+        }
+        
+        // Validate file type
+        $allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+        $fileType = mime_content_type($file['tmp_name']);
+        if (!in_array($fileType, $allowedTypes)) {
+            throw new Exception('Only PDF, DOC, and DOCX files are allowed');
+        }
+        
+        // Create upload directory if it doesn't exist
+        $uploadDir = '../../uploads/student_documents/';
+        if (!is_dir($uploadDir)) {
+            mkdir($uploadDir, 0755, true);
+        }
+        
+        // Generate unique filename
+        $fileExtension = pathinfo($file['name'], PATHINFO_EXTENSION);
+        if ($isWeeklyReport || $isMonthlyReport || $isExcuseDocument) {
+            $fileName = 'report_' . $reportType . '_' . $_SESSION['user_id'] . '_' . $reportPeriod . '_' . time() . '.' . $fileExtension;
+        } else {
+            $fileName = 'submission_' . $_SESSION['user_id'] . '_' . $documentId . '_' . time() . '.' . $fileExtension;
+        }
+        $filePath = $uploadDir . $fileName;
+        
+        // Store relative path for database (from web root)
+        $relativeFilePath = 'uploads/student_documents/' . $fileName;
+        
+        // Move uploaded file
+        if (!move_uploaded_file($file['tmp_name'], $filePath)) {
+            throw new Exception('Failed to save uploaded file');
+        }
+        
+        // Handle weekly/monthly/excuse reports separately (using student_reports table)
+        if ($isWeeklyReport || $isMonthlyReport || $isExcuseDocument) {
+            // Check if report already exists for this period
+            $stmt = $pdo->prepare("
+                SELECT id, status FROM student_reports 
+                WHERE student_id = ? AND report_type = ? AND report_period = ?
+            ");
+            $stmt->execute([$_SESSION['user_id'], $reportType, $reportPeriod]);
+            $existingReport = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($existingReport) {
+                // Report already exists - check if resubmission is allowed
+                $currentStatus = $existingReport['status'];
+                
+                if ($currentStatus === 'approved') {
+                    throw new Exception('This report has already been approved and cannot be resubmitted.');
+                } elseif ($currentStatus === 'pending') {
+                    throw new Exception('This report is already submitted and pending instructor review. Please wait for feedback before resubmitting.');
+                } elseif ($currentStatus === 'revision_required') {
+                    // Allow resubmission for revision required reports
+                    if ($isExcuseDocument) {
+                        $stmt = $pdo->prepare("
+                            UPDATE student_reports 
+                            SET file_path = ?, 
+                                excuse_date = ?,
+                                status = 'pending', 
+                                submitted_at = NOW(), 
+                                updated_at = NOW(),
+                                instructor_feedback = NULL
+                            WHERE id = ?
+                        ");
+                        $stmt->execute([$relativeFilePath, $excuseDate, $existingReport['id']]);
+                    } else {
+                        $stmt = $pdo->prepare("
+                            UPDATE student_reports 
+                            SET file_path = ?, 
+                                status = 'pending', 
+                                submitted_at = NOW(), 
+                                updated_at = NOW(),
+                                instructor_feedback = NULL
+                            WHERE id = ?
+                        ");
+                        $stmt->execute([$relativeFilePath, $existingReport['id']]);
+                    }
+                } else {
+                    // For rejected reports, allow resubmission
+                    if ($isExcuseDocument) {
+                        $stmt = $pdo->prepare("
+                            UPDATE student_reports 
+                            SET file_path = ?, 
+                                excuse_date = ?,
+                                status = 'pending', 
+                                submitted_at = NOW(), 
+                                updated_at = NOW(),
+                                instructor_feedback = NULL
+                            WHERE id = ?
+                        ");
+                        $stmt->execute([$relativeFilePath, $excuseDate, $existingReport['id']]);
+                    } else {
+                        $stmt = $pdo->prepare("
+                            UPDATE student_reports 
+                            SET file_path = ?, 
+                                status = 'pending', 
+                                submitted_at = NOW(), 
+                                updated_at = NOW(),
+                                instructor_feedback = NULL
+                            WHERE id = ?
+                        ");
+                        $stmt->execute([$relativeFilePath, $existingReport['id']]);
+                    }
+                }
+            } else {
+                // New report submission - set to pending for instructor review
+                if ($isExcuseDocument) {
+                    $stmt = $pdo->prepare("
+                        INSERT INTO student_reports (student_id, report_type, report_period, file_path, excuse_date, status, submitted_at, created_at, updated_at) 
+                        VALUES (?, ?, ?, ?, ?, 'pending', NOW(), NOW(), NOW())
+                    ");
+                    $stmt->execute([$_SESSION['user_id'], $reportType, $reportPeriod, $relativeFilePath, $excuseDate]);
+                } else {
+                    $stmt = $pdo->prepare("
+                        INSERT INTO student_reports (student_id, report_type, report_period, file_path, status, submitted_at, reviewed_at, created_at, updated_at) 
+                        VALUES (?, ?, ?, ?, 'approved', NOW(), NOW(), NOW(), NOW())
+                    ");
+                    $stmt->execute([$_SESSION['user_id'], $reportType, $reportPeriod, $relativeFilePath]);
+                }
+            }
+        } else {
+            // Regular document submission (using student_documents table)
+            // Check if document already exists and handle revision workflow
+            $stmt = $pdo->prepare("
+                SELECT id, status FROM student_documents 
+                WHERE student_id = ? AND document_id = ?
+            ");
+            $stmt->execute([$_SESSION['user_id'], $documentId]);
+            $existingSubmission = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($existingSubmission) {
+                // Document already exists - check if resubmission is allowed
+                $currentStatus = $existingSubmission['status'];
+                
+                if ($currentStatus === 'approved') {
+                    throw new Exception('This document has already been approved and cannot be resubmitted.');
+                } elseif ($currentStatus === 'pending') {
+                    throw new Exception('This document is already submitted and pending instructor review. Please wait for feedback before resubmitting.');
+                } elseif ($currentStatus === 'revision_required') {
+                    // Allow resubmission for revision required documents
+                    $stmt = $pdo->prepare("
+                        UPDATE student_documents 
+                        SET submission_file_path = ?, 
+                            status = 'pending', 
+                            submitted_at = NOW(), 
+                            updated_at = NOW(),
+                            instructor_feedback = NULL
+                        WHERE id = ?
+                    ");
+                    $stmt->execute([$filePath, $existingSubmission['id']]);
+                } else {
+                    // For rejected documents, allow resubmission
+                    $stmt = $pdo->prepare("
+                        UPDATE student_documents 
+                        SET submission_file_path = ?, 
+                            status = 'pending', 
+                            submitted_at = NOW(), 
+                            updated_at = NOW(),
+                            instructor_feedback = NULL
+                        WHERE id = ?
+                    ");
+                    $stmt->execute([$filePath, $existingSubmission['id']]);
+                }
+            } else {
+                // New submission
+                $stmt = $pdo->prepare("
+                    INSERT INTO student_documents (student_id, document_id, submission_file_path, status, submitted_at, reviewed_at, created_at, updated_at) 
+                    VALUES (?, ?, ?, 'pending', NOW(), NULL, NOW(), NOW())
+                ");
+                $stmt->execute([$_SESSION['user_id'], $documentId, $filePath]);
+            }
+        }
+        
+        // Return success response
+        // Clear any output buffer completely
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
+        
+        // Check if headers have already been sent (this would cause issues)
+        if (headers_sent($file, $line)) {
+            error_log("Headers already sent in $file on line $line");
+        }
+        
+        // Set headers
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-cache, must-revalidate');
+        http_response_code(200);
+        
+        $successMessage = 'Document submitted successfully.';
+        if ($isWeeklyReport || $isMonthlyReport || $isExcuseDocument) {
+            if ($isExcuseDocument) {
+                if (isset($existingReport) && ($existingReport['status'] === 'revision_required' || $existingReport['status'] === 'rejected')) {
+                    $successMessage = 'Excuse document resubmitted successfully. It is now pending instructor review.';
+                } else {
+                    $successMessage = 'Excuse document submitted successfully. It is now pending instructor review.';
+                }
+            } else {
+                $reportType = $isWeeklyReport ? 'weekly' : 'monthly';
+                if (isset($existingReport) && ($existingReport['status'] === 'revision_required' || $existingReport['status'] === 'rejected')) {
+                    $successMessage = ucfirst($reportType) . ' report resubmitted successfully and has been auto-approved!';
+                } else {
+                    $successMessage = ucfirst($reportType) . ' report submitted successfully and has been auto-approved!';
+                }
+            }
+        } else {
+            if (isset($existingSubmission) && $existingSubmission['status'] === 'revision_required') {
+                $successMessage = 'Document resubmitted successfully. It is now pending instructor review.';
+            } elseif (isset($existingSubmission) && $existingSubmission['status'] === 'rejected') {
+                $successMessage = 'Document resubmitted successfully. It is now pending instructor review.';
+            } else {
+                $successMessage = 'Document submitted successfully. It is now pending instructor review.';
+            }
+        }
+        
+        echo json_encode(['success' => true, 'message' => $successMessage], JSON_UNESCAPED_UNICODE);
+        exit;
+        
+    } catch (Exception $e) {
+        // Clear any output buffer completely
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
+        
+        // Check if headers have already been sent
+        if (headers_sent($file, $line)) {
+            error_log("Headers already sent in $file on line $line");
+        }
+        
+        // Set headers
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-cache, must-revalidate');
+        http_response_code(200);
+        
+        echo json_encode(['success' => false, 'message' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+}
+
+// Continue with normal page load...
 $docService = new DocumentService();
 $overdueService = new OverdueService();
 
@@ -37,6 +583,29 @@ if (!$sectionId) {
     $templates = $docService->getDocumentsForSection($sectionId);
     $customDocs = $docService->getCustomDocumentsForSection($sectionId);
     $overdueDocs = $overdueService->getOverdueDocumentsForStudent($_SESSION['user_id']);
+}
+
+// Check if student_reports table exists (for weekly/monthly reports)
+$reportsTableExists = false;
+try {
+    $stmt = $pdo->query("SHOW TABLES LIKE 'student_reports'");
+    $reportsTableExists = $stmt->rowCount() > 0;
+} catch (Exception $e) {
+    $reportsTableExists = false;
+}
+
+// Weekly, monthly, and excuse reports are now handled separately via student_reports table
+// No need to fetch from documents table
+// Helper functions are defined earlier in the file (lines 22-154)
+
+// Check weekly, monthly, and excuse report submission eligibility (using new student_reports table)
+$weeklyReportStatus = null;
+$monthlyReportStatus = null;
+$excuseReportStatus = null;
+if ($reportsTableExists) {
+    $weeklyReportStatus = canSubmitWeeklyReport($pdo, $_SESSION['user_id']);
+    $monthlyReportStatus = canSubmitMonthlyReport($pdo, $_SESSION['user_id']);
+    $excuseReportStatus = canSubmitExcuseDocument($pdo, $_SESSION['user_id']);
 }
 
 // Get student submissions
@@ -87,14 +656,16 @@ foreach ($requiredTypes as $type => $name) {
         default => 'Draft'
     };
     
-    // Get template file path, deadline, and upload date from database
+    // Get template file path, deadline, upload date, and ID from database
     $templatePath = null;
     $templateDeadline = null;
     $templateUploadDate = null;
-    $stmt = $pdo->prepare("SELECT file_path, deadline, created_at FROM documents WHERE document_type = ? AND (uploaded_for_section = ? OR uploaded_for_section IS NULL) AND uploaded_by = 1 LIMIT 1");
+    $templateId = null;
+    $stmt = $pdo->prepare("SELECT id, file_path, deadline, created_at FROM documents WHERE document_type = ? AND (uploaded_for_section = ? OR uploaded_for_section IS NULL) AND uploaded_by = 1 LIMIT 1");
     $stmt->execute([$type, $sectionId]);
     $template = $stmt->fetch(PDO::FETCH_ASSOC);
     if ($template) {
+        $templateId = $template['id'];
         $templatePath = $template['file_path'];
         $templateDeadline = $template['deadline'];
         $templateUploadDate = $template['created_at'];
@@ -123,7 +694,8 @@ foreach ($requiredTypes as $type => $name) {
     }
     
     $allDocuments[] = [
-        'id' => $type,
+        'id' => $templateId ?? $type, // Use actual document ID if available, otherwise fallback to type
+        'documentType' => $type, // Store document type separately for reference
         'name' => $name,
         'type' => 'Pre-loaded Template',
         'status' => $status,
@@ -138,6 +710,9 @@ foreach ($requiredTypes as $type => $name) {
         'instructor_feedback' => $studentDoc ? $studentDoc['instructor_feedback'] : null
     ];
 }
+
+// Weekly and monthly reports are handled via separate modal submission
+// They are not displayed in the main documents table
 
 // Add custom documents
 foreach ($customDocs as $customDoc) {
@@ -185,118 +760,6 @@ usort($allDocuments, function($a, $b) {
     $dateB = $b['uploadDate'] ? new DateTime($b['uploadDate']) : new DateTime($b['created']);
     return $dateB <=> $dateA; // Descending order (newest first)
 });
-
-// Handle document submission
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'submit_document') {
-    try {
-        $documentId = $_POST['documentId'] ?? '';
-        
-        if (empty($documentId)) {
-            throw new Exception('Document ID is required');
-        }
-        
-        // Check if file was uploaded
-        if (!isset($_FILES['documentFile']) || $_FILES['documentFile']['error'] !== UPLOAD_ERR_OK) {
-            throw new Exception('Please select a file to upload');
-        }
-        
-        $file = $_FILES['documentFile'];
-        
-        // Validate file size (10MB limit)
-        if ($file['size'] > 10 * 1024 * 1024) {
-            throw new Exception('File size must be less than 10MB');
-        }
-        
-        // Validate file type
-        $allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-        $fileType = mime_content_type($file['tmp_name']);
-        if (!in_array($fileType, $allowedTypes)) {
-            throw new Exception('Only PDF, DOC, and DOCX files are allowed');
-        }
-        
-        // Create upload directory if it doesn't exist
-        $uploadDir = '../../uploads/student_documents/';
-        if (!is_dir($uploadDir)) {
-            mkdir($uploadDir, 0755, true);
-        }
-        
-        // Generate unique filename
-        $fileExtension = pathinfo($file['name'], PATHINFO_EXTENSION);
-        $fileName = 'submission_' . $_SESSION['user_id'] . '_' . $documentId . '_' . time() . '.' . $fileExtension;
-        $filePath = $uploadDir . $fileName;
-        
-        // Move uploaded file
-        if (!move_uploaded_file($file['tmp_name'], $filePath)) {
-            throw new Exception('Failed to save uploaded file');
-        }
-        
-        // Check if document already exists and handle revision workflow
-        $stmt = $pdo->prepare("
-            SELECT id, status FROM student_documents 
-            WHERE student_id = ? AND document_id = ?
-        ");
-        $stmt->execute([$_SESSION['user_id'], $documentId]);
-        $existingSubmission = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        if ($existingSubmission) {
-            // Document already exists - check if resubmission is allowed
-            $currentStatus = $existingSubmission['status'];
-            
-            if ($currentStatus === 'approved') {
-                throw new Exception('This document has already been approved and cannot be resubmitted.');
-            } elseif ($currentStatus === 'pending') {
-                throw new Exception('This document is already submitted and pending instructor review. Please wait for feedback before resubmitting.');
-            } elseif ($currentStatus === 'revision_required') {
-                // Allow resubmission for revision required documents
-                $stmt = $pdo->prepare("
-                    UPDATE student_documents 
-                    SET submission_file_path = ?, 
-                        status = 'pending', 
-                        submitted_at = NOW(), 
-                        updated_at = NOW(),
-                        instructor_feedback = NULL
-                    WHERE id = ?
-                ");
-                $stmt->execute([$filePath, $existingSubmission['id']]);
-            } else {
-                // For rejected documents, allow resubmission
-                $stmt = $pdo->prepare("
-                    UPDATE student_documents 
-                    SET submission_file_path = ?, 
-                        status = 'pending', 
-                        submitted_at = NOW(), 
-                        updated_at = NOW(),
-                        instructor_feedback = NULL
-                    WHERE id = ?
-                ");
-                $stmt->execute([$filePath, $existingSubmission['id']]);
-            }
-        } else {
-            // New submission
-            $stmt = $pdo->prepare("
-                INSERT INTO student_documents (student_id, document_id, submission_file_path, status, submitted_at, created_at, updated_at) 
-                VALUES (?, ?, ?, 'pending', NOW(), NOW(), NOW())
-            ");
-            $stmt->execute([$_SESSION['user_id'], $documentId, $filePath]);
-        }
-        
-        // Return success response
-        header('Content-Type: application/json');
-        if ($existingSubmission && $existingSubmission['status'] === 'revision_required') {
-            echo json_encode(['success' => true, 'message' => 'Document resubmitted successfully. It is now pending instructor review.']);
-        } elseif ($existingSubmission && $existingSubmission['status'] === 'rejected') {
-            echo json_encode(['success' => true, 'message' => 'Document resubmitted successfully. It is now pending instructor review.']);
-        } else {
-            echo json_encode(['success' => true, 'message' => 'Document submitted successfully. It is now pending instructor review.']);
-        }
-        exit;
-        
-    } catch (Exception $e) {
-        header('Content-Type: application/json');
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
-        exit;
-    }
-}
 ?>
 
 <!DOCTYPE html>
@@ -664,6 +1127,103 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     <button class="btn btn-outline-secondary" onclick="downloadAllCompleted()">
                         <i class="bi bi-download me-1"></i><span class="d-none d-sm-inline">Download All</span><span class="d-sm-none">All</span>
                     </button>
+            </div>
+        </div>
+
+            <!-- Weekly, Monthly & Excuse Report Submission Section -->
+        <div class="row mb-4">
+                <div class="col-md-4 mb-3 mb-md-0">
+                    <div class="card border-success">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="mb-1">
+                                        <i class="bi bi-calendar-week me-2 text-success"></i>Weekly Report
+                                    </h6>
+                                    <p class="text-muted mb-0 small">
+                                        <?php if ($weeklyReportStatus): ?>
+                                            <?= htmlspecialchars($weeklyReportStatus['message']) ?>
+                                        <?php else: ?>
+                                            Submit your weekly report
+                                        <?php endif; ?>
+                                    </p>
+                                </div>
+                                <?php 
+                                $weeklyCanSubmit = $weeklyReportStatus && ($weeklyReportStatus['canSubmit'] ?? false);
+                                if ($weeklyCanSubmit): ?>
+                                    <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#reportSubmissionModal" onclick="openReportModal('weekly')">
+                                        <i class="bi bi-upload me-1"></i>Submit
+                                    </button>
+                                <?php else: ?>
+                                    <button class="btn btn-secondary btn-sm" disabled title="You have already submitted a report for this period">
+                                        <i class="bi bi-check-circle me-1"></i>Submitted
+                                    </button>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4 mb-3 mb-md-0">
+                    <div class="card border-success">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="mb-1">
+                                        <i class="bi bi-calendar-month me-2 text-success"></i>Monthly Report
+                                    </h6>
+                                    <p class="text-muted mb-0 small">
+                                        <?php if ($monthlyReportStatus): ?>
+                                            <?= htmlspecialchars($monthlyReportStatus['message']) ?>
+                                        <?php else: ?>
+                                            Submit your monthly report
+                                        <?php endif; ?>
+                                    </p>
+                                </div>
+                                <?php 
+                                $monthlyCanSubmit = $monthlyReportStatus && ($monthlyReportStatus['canSubmit'] ?? false);
+                                if ($monthlyCanSubmit): ?>
+                                    <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#reportSubmissionModal" onclick="openReportModal('monthly')">
+                                        <i class="bi bi-upload me-1"></i>Submit
+                                    </button>
+                                <?php else: ?>
+                                    <button class="btn btn-secondary btn-sm" disabled title="You have already submitted a report for this period">
+                                        <i class="bi bi-check-circle me-1"></i>Submitted
+                                    </button>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card border-warning">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="mb-1">
+                                        <i class="bi bi-file-earmark-medical me-2 text-warning"></i>Excuse Document
+                                    </h6>
+                                    <p class="text-muted mb-0 small">
+                                        <?php if ($excuseReportStatus): ?>
+                                            <?= htmlspecialchars($excuseReportStatus['message']) ?>
+                                        <?php else: ?>
+                                            Submit an excuse document for absence
+                                        <?php endif; ?>
+                                    </p>
+                                </div>
+                                <?php 
+                                $excuseCanSubmit = $excuseReportStatus && ($excuseReportStatus['canSubmit'] ?? false);
+                                if ($excuseCanSubmit): ?>
+                                    <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#reportSubmissionModal" onclick="openReportModal('excuse')">
+                                        <i class="bi bi-upload me-1"></i>Submit
+                                    </button>
+                                <?php else: ?>
+                                    <button class="btn btn-secondary btn-sm" disabled title="Excuse document submission not available">
+                                        <i class="bi bi-x-circle me-1"></i>Unavailable
+                                    </button>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -696,7 +1256,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         </button>
                     </li>
                 </ul>
-                </div>
+                        </div>
 
             <!-- Document Controls -->
         <div class="row mb-4">
@@ -707,14 +1267,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                 <i class="bi bi-sort-down me-1"></i>Sort by Name
                             </button>
                             <button class="btn btn-success" style="font-size: 13px;">
-                                <i class="bi bi-folder-plus me-1" style="color: white;"></i>Create Portfolio
+                                <i class="bi bi-folder-plus me-1" style="color: white;"></i>My Portfolio
                             </button>
                             <ul class="dropdown-menu">
                                 <li><a class="dropdown-item" href="#">Name</a></li>
                                 <li><a class="dropdown-item" href="#">Date</a></li>
                                 <li><a class="dropdown-item" href="#">Status</a></li>
                             </ul>
-            </div>
+                    </div>
 
                         <div class="d-flex gap-2 align-items-center">
                         <div class="input-group" style="max-width: 300px;">
@@ -723,14 +1283,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             <button class="btn btn-outline-secondary" type="button" id="clearSearchBtn" onclick="clearSearch()">
                                 <i class="bi bi-x"></i>
                             </button>
-        </div>
+                </div>
 
             <!-- Mobile search info -->
             <div class="d-md-none text-muted small">
                 <i class="bi bi-info-circle me-1"></i>Tap documents to view details
             </div>
 
-                    </div>
+                            </div>
                 </div>
             </div>
         </div>
@@ -779,14 +1339,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                     <span class="mobile-label d-md-none">Status: </span>
                             </td>
                             <td>
-                                        <span class="badge bg-<?= $doc['isTemplate'] ? 'primary' : 'info' ?>">
-                                            <?= $doc['type'] ?>
+                                        <span class="badge bg-<?= ($doc['isTemplate'] ?? false) ? 'primary' : (($doc['isReport'] ?? false) ? 'warning' : 'info') ?>">
+                                            <?= htmlspecialchars($doc['type']) ?>
                                     </span>
+                                        <?php if (isset($doc['isReport']) && $doc['isReport'] && isset($doc['canSubmit']) && !$doc['canSubmit']): ?>
+                                            <br><small class="text-danger mt-1 d-block"><?= htmlspecialchars($doc['submitMessage'] ?? '') ?></small>
+                                <?php endif; ?>
                                         <span class="mobile-label d-md-none">Type: </span>
                             </td>
                             <td>
                                         <div class="btn-group btn-group-sm" role="group">
-                            <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#documentModal" onclick="loadDocument('<?= $doc['id'] ?>', '<?= htmlspecialchars($doc['name']) ?>', '<?= $doc['status'] ?>', '<?= $doc['filePath'] ?? '' ?>', '<?= $doc['deadline'] ?? '' ?>', '<?= htmlspecialchars($doc['instructor_feedback'] ?? '') ?>')">
+                            <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#documentModal" onclick="loadDocument('<?= $doc['id'] ?>', '<?= htmlspecialchars($doc['name']) ?>', '<?= $doc['status'] ?>', '<?= $doc['filePath'] ?? '' ?>', '<?= $doc['deadline'] ?? '' ?>', '<?= htmlspecialchars($doc['instructor_feedback'] ?? '') ?>', '<?= isset($doc['isReport']) && $doc['isReport'] ? $doc['reportType'] : '' ?>', <?= isset($doc['canSubmit']) && $doc['canSubmit'] ? 'true' : 'false' ?>, '<?= htmlspecialchars($doc['submitMessage'] ?? '') ?>')">
                                 <i class="bi bi-eye"></i> View
                             </button>
                                 </div>
@@ -989,8 +1552,174 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             filterDocumentsByTab('#all');
         });
         
+        // Open Report Submission Modal
+        function openReportModal(reportType) {
+            const modal = document.getElementById('reportSubmissionModal');
+            const modalHeader = document.getElementById('reportModalHeader');
+            const modalTitle = document.getElementById('reportSubmissionModalLabel');
+            const reportTypeInput = document.getElementById('reportType');
+            const messageText = document.getElementById('reportSubmissionMessageText');
+            const submitBtn = document.getElementById('submitReportBtn');
+            const fileInput = document.getElementById('reportFileInput');
+            
+            // Set report type
+            reportTypeInput.value = reportType;
+            
+            // Show/hide excuse date field
+            const excuseDateField = document.getElementById('excuseDateField');
+            if (excuseDateField) {
+                if (reportType === 'excuse') {
+                    excuseDateField.style.display = 'block';
+                } else {
+                    excuseDateField.style.display = 'none';
+                }
+            }
+            
+            // Update modal appearance based on report type
+            if (reportType === 'weekly') {
+                modalHeader.className = 'modal-header bg-success text-white';
+                modalTitle.innerHTML = '<i class="bi bi-calendar-week me-2"></i>Submit Weekly Report';
+                submitBtn.className = 'btn btn-success';
+                messageText.textContent = 'Please select a file to upload for your weekly report. You can only submit once per week (Monday to Sunday).';
+            } else if (reportType === 'monthly') {
+                modalHeader.className = 'modal-header bg-success text-white';
+                modalTitle.innerHTML = '<i class="bi bi-calendar-month me-2"></i>Submit Monthly Report';
+                submitBtn.className = 'btn btn-success';
+                messageText.textContent = 'Please select a file to upload for your monthly report. You can only submit once per calendar month.';
+            } else if (reportType === 'excuse') {
+                modalHeader.className = 'modal-header bg-warning text-dark';
+                modalTitle.innerHTML = '<i class="bi bi-file-earmark-medical me-2"></i>Submit Excuse Document';
+                submitBtn.className = 'btn btn-warning';
+                messageText.textContent = 'Please select a file and the date for which you are submitting this excuse document.';
+            }
+            
+            // Reset form
+            fileInput.value = '';
+            const excuseDateInput = document.getElementById('excuseDateInput');
+            if (excuseDateInput) {
+                excuseDateInput.value = '';
+            }
+            document.getElementById('reportSubmissionStatus').style.display = 'none';
+            submitBtn.disabled = false;
+        }
+        
+        // Submit Report
+        function submitReport() {
+            const reportType = document.getElementById('reportType').value;
+            const fileInput = document.getElementById('reportFileInput');
+            const submitBtn = document.getElementById('submitReportBtn');
+            const statusDiv = document.getElementById('reportSubmissionStatus');
+            const statusAlert = document.getElementById('reportStatusAlert');
+            
+            // Validate file
+            if (!fileInput.files || fileInput.files.length === 0) {
+                statusDiv.style.display = 'block';
+                statusAlert.className = 'alert alert-danger';
+                statusAlert.innerHTML = '<i class="bi bi-exclamation-triangle me-2"></i>Please select a file to upload.';
+                return;
+            }
+            
+            const file = fileInput.files[0];
+            
+            // Validate file size (10MB limit)
+            if (file.size > 10 * 1024 * 1024) {
+                statusDiv.style.display = 'block';
+                statusAlert.className = 'alert alert-danger';
+                statusAlert.innerHTML = '<i class="bi bi-exclamation-triangle me-2"></i>File size must be less than 10MB.';
+                return;
+            }
+            
+            // Validate file type
+            const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+            // Check by extension as well since mime type might not be reliable
+            const fileExtension = file.name.split('.').pop().toLowerCase();
+            if (!['pdf', 'doc', 'docx'].includes(fileExtension)) {
+                statusDiv.style.display = 'block';
+                statusAlert.className = 'alert alert-danger';
+                statusAlert.innerHTML = '<i class="bi bi-exclamation-triangle me-2"></i>Only PDF, DOC, and DOCX files are allowed.';
+                return;
+            }
+            
+            // Validate excuse date if excuse document
+            if (reportType === 'excuse') {
+                const excuseDateInput = document.getElementById('excuseDateInput');
+                if (!excuseDateInput || !excuseDateInput.value) {
+                    statusDiv.style.display = 'block';
+                    statusAlert.className = 'alert alert-danger';
+                    statusAlert.innerHTML = '<i class="bi bi-exclamation-triangle me-2"></i>Please select the date for which you are submitting this excuse.';
+                    return;
+                }
+            }
+            
+            // Prepare form data
+            const formData = new FormData();
+            formData.append('documentFile', file);
+            formData.append('action', 'submit_document');
+            if (reportType === 'weekly') {
+                formData.append('documentId', 'weekly_report');
+            } else if (reportType === 'monthly') {
+                formData.append('documentId', 'monthly_report');
+            } else if (reportType === 'excuse') {
+                formData.append('documentId', 'excuse_document');
+                formData.append('excuseDate', document.getElementById('excuseDateInput').value);
+            }
+            
+            // Show loading state
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Submitting...';
+            statusDiv.style.display = 'block';
+            statusAlert.className = 'alert alert-info';
+            statusAlert.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Uploading and processing your report...';
+            
+            // Submit the form
+            fetch('documents.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                // Check if response is OK
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                // Check content type
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    // If not JSON, get text and log it
+                    return response.text().then(text => {
+                        console.error('Non-JSON response:', text);
+                        throw new Error('Server returned non-JSON response');
+                    });
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data && data.success) {
+                    statusAlert.className = 'alert alert-success';
+                    statusAlert.innerHTML = '<i class="bi bi-check-circle me-2"></i>' + (data.message || 'Report submitted successfully!');
+                    submitBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Submitted';
+                    
+                    // Reload page after 2 seconds
+                    setTimeout(() => {
+                        location.reload();
+                    }, 2000);
+                } else {
+                    statusAlert.className = 'alert alert-danger';
+                    statusAlert.innerHTML = '<i class="bi bi-exclamation-triangle me-2"></i>' + (data?.message || 'Error submitting report. Please try again.');
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="bi bi-upload me-1"></i>Submit Report';
+                }
+            })
+            .catch(error => {
+                console.error('Submission error:', error);
+                statusAlert.className = 'alert alert-danger';
+                statusAlert.innerHTML = '<i class="bi bi-exclamation-triangle me-2"></i>Error submitting report: ' + (error.message || 'Please try again or refresh the page.');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="bi bi-upload me-1"></i>Submit Report';
+            });
+        }
+        
         // Load document in modal
-    function loadDocument(id, name, status, filePath, deadline, instructorFeedback = '') {
+    function loadDocument(id, name, status, filePath, deadline, instructorFeedback = '', reportType = '', canSubmit = true, submitMessage = '') {
         document.getElementById('modalDocumentName').textContent = name;
         document.getElementById('modalDocumentStatus').textContent = status;
         document.getElementById('modalDocumentStatus').className = 'badge bg-' + getStatusColor(status);
@@ -998,52 +1727,82 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         // Store file path and document ID for download/submission
         window.currentDocumentFilePath = filePath;
         window.currentDocumentId = id;
+        window.isReport = reportType !== '';
+        window.canSubmitReport = canSubmit === true || canSubmit === 'true';
+        window.reportSubmitMessage = submitMessage;
         
-        // Update download button state
+        // Update download button state (reports don't have templates)
         const downloadBtn = document.getElementById('downloadTemplateBtn');
-        if (filePath && filePath !== '') {
+        if (window.isReport) {
+            downloadBtn.disabled = true;
+            downloadBtn.innerHTML = '<i class="bi bi-info-circle me-1"></i>No Template Available';
+            downloadBtn.style.display = 'none'; // Hide download button for reports
+        } else if (filePath && filePath !== '') {
             downloadBtn.disabled = false;
             downloadBtn.innerHTML = '<i class="bi bi-download me-1"></i>Download Template';
+            downloadBtn.style.display = 'block';
         } else {
             downloadBtn.disabled = true;
             downloadBtn.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>No Template Available';
+            downloadBtn.style.display = 'block';
         }
         
         // Update submit button state based on document status
         const submitBtn = document.getElementById('submitDocumentBtn');
         console.log('Document status:', status); // Debug log
         
-        // Handle different document statuses
-        if (status === 'Completed' || status === 'completed' || status === 'Approved' || status === 'approved') {
-            // Document is already approved - no resubmission allowed
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Already Completed';
-            submitBtn.className = 'btn btn-success disabled';
-            console.log('Button disabled for completed document');
-        } else if (status === 'Sent' || status === 'sent' || status === 'Pending' || status === 'pending') {
-            // Document is already submitted and pending - no resubmission allowed
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = '<i class="bi bi-clock me-1"></i>Pending Review';
-            submitBtn.className = 'btn btn-warning disabled';
-            console.log('Button disabled for pending document');
-        } else if (status === 'Suggest Edits' || status === 'suggest_edits' || status === 'Revision Required' || status === 'revision_required') {
-            // Document needs revision - allow resubmission
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Resubmit Document';
-            submitBtn.className = 'btn btn-warning';
-            console.log('Button enabled for revision required document');
-        } else if (status === 'Expired' || status === 'expired' || status === 'Rejected' || status === 'rejected') {
-            // Document was rejected - allow resubmission
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = '<i class="bi bi-upload me-1"></i>Submit Document';
-            submitBtn.className = 'btn btn-danger';
-            console.log('Button enabled for rejected document');
+        // Handle reports differently
+        if (window.isReport) {
+            if (!window.canSubmitReport) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="bi bi-x-circle me-1"></i>Cannot Submit';
+                submitBtn.className = 'btn btn-danger disabled';
+                submitBtn.title = window.reportSubmitMessage;
+            } else if (status === 'Completed' || status === 'completed' || status === 'Approved' || status === 'approved') {
+                // Report already submitted for this period
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Already Submitted';
+                submitBtn.className = 'btn btn-success disabled';
+            } else {
+                // Can submit report
+                const reportLabel = reportType === 'weekly' ? 'Weekly' : 'Monthly';
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="bi bi-upload me-1"></i>Submit ' + reportLabel + ' Report';
+                submitBtn.className = 'btn btn-success';
+            }
         } else {
-            // Draft or not started - allow submission
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = '<i class="bi bi-upload me-1"></i>Submit Document';
-            submitBtn.className = 'btn btn-success';
-            console.log('Button enabled for draft document');
+            // Handle regular documents
+            if (status === 'Completed' || status === 'completed' || status === 'Approved' || status === 'approved') {
+                // Document is already approved - no resubmission allowed
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Already Completed';
+                submitBtn.className = 'btn btn-success disabled';
+                console.log('Button disabled for completed document');
+            } else if (status === 'Sent' || status === 'sent' || status === 'Pending' || status === 'pending') {
+                // Document is already submitted and pending - no resubmission allowed
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="bi bi-clock me-1"></i>Pending Review';
+                submitBtn.className = 'btn btn-warning disabled';
+                console.log('Button disabled for pending document');
+            } else if (status === 'Suggest Edits' || status === 'suggest_edits' || status === 'Revision Required' || status === 'revision_required') {
+                // Document needs revision - allow resubmission
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Resubmit Document';
+                submitBtn.className = 'btn btn-warning';
+                console.log('Button enabled for revision required document');
+            } else if (status === 'Expired' || status === 'expired' || status === 'Rejected' || status === 'rejected') {
+                // Document was rejected - allow resubmission
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="bi bi-upload me-1"></i>Submit Document';
+                submitBtn.className = 'btn btn-danger';
+                console.log('Button enabled for rejected document');
+            } else {
+                // Draft or not started - allow submission
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="bi bi-upload me-1"></i>Submit Document';
+                submitBtn.className = 'btn btn-success';
+                console.log('Button enabled for draft document');
+            }
         }
         
         // Display deadline
@@ -1198,18 +1957,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         // Check if submit button is disabled
         const submitBtn = document.getElementById('submitDocumentBtn');
         if (submitBtn.disabled) {
-            const currentStatus = document.getElementById('modalDocumentStatus').textContent.trim();
-            if (currentStatus === 'Already Completed') {
-                alert('This document has already been completed and approved. You cannot submit it again.');
-            } else if (currentStatus === 'Pending Review') {
-                alert('This document is already submitted and pending instructor review. Please wait for the instructor\'s feedback before resubmitting.');
+            // Check if this is a report that can't be submitted
+            if (window.isReport && !window.canSubmitReport) {
+                alert(window.reportSubmitMessage || 'You cannot submit this report at this time.');
+            } else {
+                const currentStatus = document.getElementById('modalDocumentStatus').textContent.trim();
+                if (currentStatus === 'Already Completed' || currentStatus === 'Already Submitted') {
+                    alert('This document has already been completed. You cannot submit it again.');
+                } else if (currentStatus === 'Pending Review') {
+                    alert('This document is already submitted and pending instructor review. Please wait for the instructor\'s feedback before resubmitting.');
+                } else if (currentStatus === 'Cannot Submit') {
+                    alert(window.reportSubmitMessage || 'You cannot submit this report at this time.');
+                }
             }
+            return;
+        }
+        
+        // For reports, check if submission is allowed
+        if (window.isReport && !window.canSubmitReport) {
+            alert(window.reportSubmitMessage || 'You cannot submit this report at this time.');
             return;
         }
         
         // Check document status for additional validation
         const currentStatus = document.getElementById('modalDocumentStatus').textContent.trim();
-        if (currentStatus === 'Already Completed' || currentStatus === 'Pending Review') {
+        if (currentStatus === 'Already Completed' || currentStatus === 'Already Submitted' || currentStatus === 'Pending Review') {
             alert('This document cannot be submitted at this time. Please check the document status.');
             return;
         }
@@ -1398,6 +2170,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Report Submission Modal -->
+    <div class="modal fade" id="reportSubmissionModal" tabindex="-1" aria-labelledby="reportSubmissionModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-warning text-white" id="reportModalHeader">
+                    <h5 class="modal-title" id="reportSubmissionModalLabel">
+                        <i class="bi bi-calendar-week me-2"></i>Submit Weekly Report
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="reportSubmissionMessage" class="alert alert-info mb-3" role="alert">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <span id="reportSubmissionMessageText">Please select a file to upload for your weekly report.</span>
+                    </div>
+                    <form id="reportSubmissionForm">
+                        <input type="hidden" id="reportType" name="reportType" value="">
+                        <div id="excuseDateField" class="mb-3" style="display: none;">
+                            <label for="excuseDateInput" class="form-label">Date of Absence <span class="text-danger">*</span></label>
+                            <input type="date" class="form-control" id="excuseDateInput" name="excuseDate" required>
+                            <small class="form-text text-muted">Select the date for which you are submitting this excuse document.</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="reportFileInput" class="form-label">Select Report File</label>
+                            <input type="file" class="form-control" id="reportFileInput" name="reportFile" accept=".pdf,.doc,.docx" required>
+                            <small class="form-text text-muted">Accepted formats: PDF, DOC, DOCX (Max 10MB)</small>
+                        </div>
+                        <div id="reportSubmissionStatus" class="mb-3" style="display: none;">
+                            <div class="alert" id="reportStatusAlert" role="alert"></div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-warning" id="submitReportBtn" onclick="submitReport()">
+                        <i class="bi bi-upload me-1"></i>Submit Report
+                    </button>
                 </div>
             </div>
         </div>

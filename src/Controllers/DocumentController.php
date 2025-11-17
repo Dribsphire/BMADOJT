@@ -54,7 +54,6 @@ class DocumentController
             $description = trim($_POST['description'] ?? '');
             
             // Handle custom document fields
-            $customDocumentName = trim($_POST['custom_document_name'] ?? '');
             $isRequired = isset($_POST['is_required']) ? (int)$_POST['is_required'] : 0;
 
             if (empty($documentName) || empty($documentType)) {
@@ -70,72 +69,30 @@ class DocumentController
             if (!in_array($documentType, $allowedTypes)) {
                 throw new Exception('Invalid document type');
             }
-            
-            // For custom documents, use custom name if provided
-            if ($documentType === 'other' && !empty($customDocumentName)) {
-                $documentName = $customDocumentName;
-            }
 
-            // Handle file upload
+            // Handle file upload(s)
             if (!isset($_FILES['template_file'])) {
                 throw new Exception('No file was uploaded');
             }
             
-            $file = $_FILES['template_file'];
+            $files = $_FILES['template_file'];
             
-            // Check upload error with specific messages
-            if ($file['error'] !== UPLOAD_ERR_OK) {
-                $errorMessages = [
-                    UPLOAD_ERR_INI_SIZE => 'File exceeds upload_max_filesize (' . ini_get('upload_max_filesize') . ')',
-                    UPLOAD_ERR_FORM_SIZE => 'File exceeds MAX_FILE_SIZE directive',
-                    UPLOAD_ERR_PARTIAL => 'File was only partially uploaded',
-                    UPLOAD_ERR_NO_FILE => 'No file was uploaded',
-                    UPLOAD_ERR_NO_TMP_DIR => 'Missing temporary folder',
-                    UPLOAD_ERR_CANT_WRITE => 'Failed to write file to disk',
-                    UPLOAD_ERR_EXTENSION => 'File upload stopped by extension'
+            // Normalize single file to array format
+            if (!is_array($files['name'])) {
+                $files = [
+                    'name' => [$files['name']],
+                    'type' => [$files['type']],
+                    'tmp_name' => [$files['tmp_name']],
+                    'error' => [$files['error']],
+                    'size' => [$files['size']]
                 ];
-                
-                $errorMessage = $errorMessages[$file['error']] ?? 'Unknown upload error (code: ' . $file['error'] . ')';
-                throw new Exception('File upload failed: ' . $errorMessage);
             }
-
-            // Validate file - use extension as primary validation method
-            $extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+            
+            $uploadedCount = 0;
+            $errors = [];
             $allowedExtensions = ['pdf', 'docx', 'doc', 'txt'];
             
-            if (!in_array($extension, $allowedExtensions)) {
-                throw new Exception('Only PDF, DOCX, DOC, and TXT files are allowed. File extension: ' . $extension);
-            }
-            
-            // Additional MIME type validation (but don't rely on it exclusively)
-            $finfo = finfo_open(FILEINFO_MIME_TYPE);
-            $mimeType = finfo_file($finfo, $file['tmp_name']);
-            finfo_close($finfo);
-            
-            // Log the MIME type for debugging but don't fail on it
-            error_log("File upload - Extension: $extension, MIME: $mimeType, File: " . $file['name']);
-
-            if ($file['size'] > 10 * 1024 * 1024) { // 10MB
-                throw new Exception('File size must be less than 10MB');
-            }
-
-            // Create upload directory
-            $uploadDir = __DIR__ . '/../../uploads/templates/';
-            if (!is_dir($uploadDir)) {
-                mkdir($uploadDir, 0755, true);
-            }
-
-            // Generate unique filename
-            $extension = pathinfo($file['name'], PATHINFO_EXTENSION);
-            $filename = 'instructor_' . $_SESSION['user_id'] . '_' . $documentType . '_' . time() . '.' . $extension;
-            $filePath = $uploadDir . $filename;
-
-            // Move uploaded file
-            if (!move_uploaded_file($file['tmp_name'], $filePath)) {
-                throw new Exception('Failed to save uploaded file');
-            }
-
-            // Get instructor's section
+            // Get instructor's section (once for all files)
             $stmt = $this->pdo->prepare("SELECT section_id FROM users WHERE id = ?");
             $stmt->execute([$_SESSION['user_id']]);
             $instructor = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -143,47 +100,128 @@ class DocumentController
             if (!$instructor || !$instructor['section_id']) {
                 throw new Exception('Instructor must be assigned to a section');
             }
-
-            // Create document record
-            $documentId = $this->documentService->createDocument(
-                $documentName,
-                $documentType,
-                'uploads/templates/' . $filename,
-                $_SESSION['user_id'],
-                $instructor['section_id'],
-                $deadline,
-                (bool)$isRequired
-            );
-
-            // Update description if provided
-            if (!empty($description)) {
-                $stmt = $this->pdo->prepare("
-                    UPDATE documents 
-                    SET description = ? 
-                    WHERE id = ?
-                ");
-                $stmt->execute([$description, $documentId]);
+            
+            // Create upload directory
+            $uploadDir = __DIR__ . '/../../uploads/templates/';
+            if (!is_dir($uploadDir)) {
+                mkdir($uploadDir, 0755, true);
             }
-
-            // Send email notification to students
-            $this->emailService->sendTemplateUploadNotification(
-                $_SESSION['user_id'],
-                $instructor['section_id'],
-                $documentName,
-                $documentType,
-                $deadline,
-                $description
-            );
-
-            // Log activity
-            $stmt = $this->pdo->prepare("
-                INSERT INTO activity_logs (user_id, action, description) 
-                VALUES (?, 'upload_template', ?)
-            ");
-            $stmt->execute([
-                $_SESSION['user_id'],
-                "Uploaded template: {$documentName}"
-            ]);
+            
+            // Process each file
+            for ($i = 0; $i < count($files['name']); $i++) {
+                if ($files['error'][$i] !== UPLOAD_ERR_OK) {
+                    $errorMessages = [
+                        UPLOAD_ERR_INI_SIZE => 'File exceeds upload_max_filesize (' . ini_get('upload_max_filesize') . ')',
+                        UPLOAD_ERR_FORM_SIZE => 'File exceeds MAX_FILE_SIZE directive',
+                        UPLOAD_ERR_PARTIAL => 'File was only partially uploaded',
+                        UPLOAD_ERR_NO_FILE => 'No file was uploaded',
+                        UPLOAD_ERR_NO_TMP_DIR => 'Missing temporary folder',
+                        UPLOAD_ERR_CANT_WRITE => 'Failed to write file to disk',
+                        UPLOAD_ERR_EXTENSION => 'File upload stopped by extension'
+                    ];
+                    
+                    $errorMessage = $errorMessages[$files['error'][$i]] ?? 'Unknown upload error (code: ' . $files['error'][$i] . ')';
+                    $errors[] = $files['name'][$i] . ': ' . $errorMessage;
+                    continue;
+                }
+                
+                $file = [
+                    'name' => $files['name'][$i],
+                    'type' => $files['type'][$i],
+                    'tmp_name' => $files['tmp_name'][$i],
+                    'error' => $files['error'][$i],
+                    'size' => $files['size'][$i]
+                ];
+                
+                // Validate file extension
+                $extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+                if (!in_array($extension, $allowedExtensions)) {
+                    $errors[] = $file['name'] . ': Invalid file extension. Only PDF, DOCX, DOC, and TXT files are allowed.';
+                    continue;
+                }
+                
+                // Validate file size
+                if ($file['size'] > 10 * 1024 * 1024) { // 10MB
+                    $errors[] = $file['name'] . ': File size exceeds 10MB limit.';
+                    continue;
+                }
+                
+                // Generate unique filename
+                $filename = 'instructor_' . $_SESSION['user_id'] . '_' . $documentType . '_' . time() . '_' . $i . '.' . $extension;
+                $filePath = $uploadDir . $filename;
+                
+                // Move uploaded file
+                if (!move_uploaded_file($file['tmp_name'], $filePath)) {
+                    $errors[] = $file['name'] . ': Failed to save uploaded file.';
+                    continue;
+                }
+                
+                // Create document name for this file (append number if multiple files)
+                $fileDocumentName = count($files['name']) > 1 
+                    ? $documentName . ' (' . ($i + 1) . ')'
+                    : $documentName;
+                
+                // Create document record
+                try {
+                    $documentId = $this->documentService->createDocument(
+                        $fileDocumentName,
+                        $documentType,
+                        'uploads/templates/' . $filename,
+                        $_SESSION['user_id'],
+                        $instructor['section_id'],
+                        $deadline,
+                        (bool)$isRequired
+                    );
+                    
+                    // Update description if provided
+                    if (!empty($description)) {
+                        $stmt = $this->pdo->prepare("
+                            UPDATE documents 
+                            SET description = ? 
+                            WHERE id = ?
+                        ");
+                        $stmt->execute([$description, $documentId]);
+                    }
+                    
+                    // Send email notification to students
+                    $this->emailService->sendTemplateUploadNotification(
+                        $_SESSION['user_id'],
+                        $instructor['section_id'],
+                        $fileDocumentName,
+                        $documentType,
+                        $deadline,
+                        $description
+                    );
+                    
+                    // Log activity
+                    $stmt = $this->pdo->prepare("
+                        INSERT INTO activity_logs (user_id, action, description) 
+                        VALUES (?, 'upload_template', ?)
+                    ");
+                    $stmt->execute([
+                        $_SESSION['user_id'],
+                        "Uploaded template: {$fileDocumentName}"
+                    ]);
+                    
+                    $uploadedCount++;
+                } catch (\Exception $e) {
+                    $errors[] = $file['name'] . ': ' . $e->getMessage();
+                    // Clean up uploaded file if document creation failed
+                    if (file_exists($filePath)) {
+                        @unlink($filePath);
+                    }
+                }
+            }
+            
+            // Report results
+            if ($uploadedCount === 0) {
+                throw new Exception('No files were uploaded successfully. Errors: ' . implode('; ', $errors));
+            }
+            
+            if (count($errors) > 0) {
+                // Some files failed, but some succeeded
+                $_SESSION['warning'] = $uploadedCount . ' file(s) uploaded successfully. Some files failed: ' . implode('; ', $errors);
+            }
 
             header('Location: templates.php?success=template_uploaded');
             exit;

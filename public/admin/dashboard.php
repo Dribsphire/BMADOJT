@@ -30,6 +30,14 @@ error_log("Admin dashboard access - Session state: user_id=" . ($_SESSION['user_
          ", acting_role=" . ($_SESSION['acting_role'] ?? 'NOT SET') . 
          ", original_role=" . ($_SESSION['original_role'] ?? 'NOT SET'));
 
+// Additional debug: Check user role from database
+$user = $authMiddleware->getCurrentUser();
+if ($user) {
+    error_log("Admin dashboard access - Database role: " . $user->role);
+} else {
+    error_log("Admin dashboard access - No user found!");
+}
+
 // Check admin access (including acting as instructor)
 AdminAccess::requireAdminAccess();
 
@@ -345,22 +353,12 @@ $atRiskPercentage = $totalStudents > 0 ? round(($atRiskCount / $totalStudents) *
 <body>
     <?php include 'sidebar.php'; ?>
     <main>
-    
-    <!-- Main Content -->
-    <div class="container-fluid py-4">
-        <div class="row">
-            <div class="col-12">
-                <h2 class="mb-4">
-                    <i class="bi bi-speedometer2 me-2"></i>Admin Dashboard
-                </h2>
-            </div>
-        </div>
         
         <!-- Top Banner Section -->
         <div class="top-banner">
             <div class="container-fluid">
                 <div class="row align-items-center">
-                    <div class="col-md-10">
+                    <div class="col-md-8">
                         <div class="welcome-message">Welcome back, <?= htmlspecialchars($user->full_name ?? 'Administrator') ?>!</div>
                         <div class="admin-info">
                             <div class="info-item">
@@ -379,10 +377,10 @@ $atRiskPercentage = $totalStudents > 0 ? round(($atRiskCount / $totalStudents) *
                 </div>
             </div>
         </div>
-        
+        <br>
         <!-- Summary Cards -->
         <div class="row mb-4 summary-cards">
-            <div class="col-md-2 mb-3">
+            <div class="col-md-4">
                 <div class="card stat-card">
                     <div class="card-body text-center">
                         <h3 class="stat-number"><?= $userStats[0]['count'] ?? 0 ?></h3>
@@ -390,7 +388,7 @@ $atRiskPercentage = $totalStudents > 0 ? round(($atRiskCount / $totalStudents) *
                     </div>
                 </div>
             </div>
-            <div class="col-md-2 mb-3">
+            <div class="col-md-4">
                 <div class="card stat-card">
                     <div class="card-body text-center">
                         <h3 class="stat-number"><?= $userStats[1]['count'] ?? 0 ?></h3>
@@ -398,7 +396,7 @@ $atRiskPercentage = $totalStudents > 0 ? round(($atRiskCount / $totalStudents) *
                     </div>
                 </div>
             </div>
-            <div class="col-md-2 mb-3">
+            <div class="col-md-4">
                 <div class="card stat-card">
                     <div class="card-body text-center">
                         <h3 class="stat-number"><?= $totalSections ?></h3>
@@ -406,115 +404,12 @@ $atRiskPercentage = $totalStudents > 0 ? round(($atRiskCount / $totalStudents) *
                     </div>
                 </div>
             </div>
-            <div class="col-md-2 mb-3">
-                <div class="card stat-card">
-                    <div class="card-body text-center">
-                        <h3 class="stat-number text-success"><?= $onTrackCount ?> (<?= $onTrackPercentage ?>%)</h3>
-                        <p class="stat-label">Students On Track</p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-2 mb-3">
-                <div class="card stat-card">
-                    <div class="card-body text-center">
-                        <h3 class="stat-number text-warning"><?= $needsAttentionCount ?> (<?= $needsAttentionPercentage ?>%)</h3>
-                        <p class="stat-label">Needs Attention</p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-2 mb-3">
-                <div class="card stat-card">
-                    <div class="card-body text-center">
-                        <h3 class="stat-number text-danger"><?= $atRiskCount ?> (<?= $atRiskPercentage ?>%)</h3>
-                        <p class="stat-label">Students At Risk</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Quick Actions -->
-        <!-- Management Cards -->
-        <div class="row management-cards">
-            <div class="col-md-4 mb-3">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">
-                            <i class="bi bi-people me-2"></i>User Management
-                        </h5>
-                        <p class="card-text">Manage students, instructors, and sections.</p>
-                        <a href="users.php" class="btn btn-primary">
-                            <i class="bi bi-arrow-right me-1"></i>Manage Users
-                        </a>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-4 mb-3">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">
-                            <i class="bi bi-gear me-2"></i>System Settings
-                        </h5>
-                        <p class="card-text">Configure system-wide settings and preferences.</p>
-                        <a href="settings.php" class="btn btn-warning">
-                            <i class="bi bi-arrow-right me-1"></i>Settings
-                        </a>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-4 mb-3">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">
-                            <i class="bi bi-tools me-2"></i>System Maintenance
-                        </h5>
-                        <p class="card-text">Monitor system health and perform maintenance tasks.</p>
-                        <a href="maintenance.php" class="btn btn-info">
-                            <i class="bi bi-arrow-right me-1"></i>Maintenance
-                        </a>
-                    </div>
-                </div>
-            </div>
+            
         </div>
         
         <!-- Role Switching -->
-        <div class="row">
-            <div class="col-md-6 mb-3">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">
-                            <i class="bi bi-arrow-left-right me-2"></i>Role Switching
-                        </h5>
-                        <p class="card-text">Switch to instructor mode to access instructor features.</p>
-                        <?php if ($user->section_id): ?>
-                            <form method="POST" action="switch_role.php" class="d-inline">
-                                <input type="hidden" name="action" value="switch_to_instructor">
-                                <button type="submit" class="btn btn-success">
-                                    <i class="bi bi-arrow-right me-1"></i>Switch to Instructor Mode
-                                </button>
-                            </form>
-                        <?php else: ?>
-                            <p class="text-muted small">You need to be assigned to a section to switch to instructor mode.</p>
-                            <a href="users.php" class="btn btn-outline-primary btn-sm">
-                                <i class="bi bi-person-plus me-1"></i>Assign Section to Yourself
-                            </a>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-6 mb-3">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">
-                            <i class="bi bi-graph-up me-2"></i>System Reports
-                        </h5>
-                        <p class="card-text">View attendance reports and analytics.</p>
-                        <a href="#" class="btn btn-primary">
-                            <i class="bi bi-arrow-right me-1"></i>View Reports
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </div>
+
+            
         
         <!-- Data Tables Section -->
         <div class="row mb-4">
@@ -622,78 +517,6 @@ $atRiskPercentage = $totalStudents > 0 ? round(($atRiskCount / $totalStudents) *
             </div>
         </div>
         
-        <!-- Quick Actions -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header">
-                        <h5 class="card-title mb-0">
-                            <i class="bi bi-lightning me-2"></i>Quick Actions
-                        </h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-2 mb-2">
-                                <a href="users.php?action=register" class="btn btn-primary w-100">
-                                    <i class="bi bi-person-plus me-1"></i>Add Student
-                                </a>
-                            </div>
-                            <div class="col-md-2 mb-2">
-                                <a href="users.php?action=register" class="btn btn-info w-100">
-                                    <i class="bi bi-person-plus me-1"></i>Add Instructor
-                                </a>
-                            </div>
-                            <div class="col-md-2 mb-2">
-                                <a href="users.php?action=bulk_register" class="btn btn-warning w-100">
-                                    <i class="bi bi-upload me-1"></i>Bulk Registration
-                                </a>
-                            </div>
-                            <div class="col-md-2 mb-2">
-                                <a href="sections.php" class="btn btn-success w-100">
-                                    <i class="bi bi-collection me-1"></i>Manage Sections
-                                </a>
-                            </div>
-                            <div class="col-md-2 mb-2">
-                                <a href="#" class="btn btn-secondary w-100">
-                                    <i class="bi bi-download me-1"></i>Export Reports
-                                </a>
-                            </div>
-                            <div class="col-md-2 mb-2">
-                                <a href="settings.php" class="btn btn-outline-primary w-100">
-                                    <i class="bi bi-gear me-1"></i>Settings
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-    <!-- Logout Confirmation Modal -->
-    <div class="modal fade" id="logoutModalDashboard" tabindex="-1" aria-labelledby="logoutModalDashboardLabel" aria-hidden="true">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="logoutModalDashboardLabel">
-                        <i class="bi bi-box-arrow-right me-2"></i>Confirm Logout
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <p>Are you sure you want to logout from OJT Route?</p>
-                    <p class="text-muted small">You will need to login again to access the system.</p>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                        <i class="bi bi-x-circle me-1"></i>Cancel
-                    </button>
-                    <a href="../logoutadmin.php" class="btn btn-danger">
-                        <i class="bi bi-box-arrow-right me-1"></i>Yes, Logout
-                    </a>
-                </div>
-            </div>
-        </div>
-    </div>
     </main>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>

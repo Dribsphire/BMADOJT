@@ -102,7 +102,7 @@ if (isset($_SESSION['user_id'])) {
         </a>
       </li>
       <li>
-        <a href="../logout.php">
+        <a href="../logout.php" data-bs-toggle="modal" data-bs-target="#logoutModalDashboard">
         <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#e3e3e3"><path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h280v80H200v560h280v80H200Zm440-160-55-58 102-102H360v-80h327L585-622l55-58 200 200-200 200Z"/></svg>
         <span>Logout</span>
         </a>
@@ -110,7 +110,31 @@ if (isset($_SESSION['user_id'])) {
     </ul>
 
   </nav>
-
+        <!-- Logout Confirmation Modal -->
+      <div class="modal fade" id="logoutModalDashboard" tabindex="-1" aria-labelledby="logoutModalDashboardLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="logoutModalDashboardLabel">
+                        <i class="bi bi-box-arrow-right me-2"></i>Confirm Logout
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to logout from OJT Route?</p>
+                    <p class="text-muted small">You will need to login again to access the system.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="bi bi-x-circle me-1"></i>Cancel
+                    </button>
+                    <a href="../logout.php" class="btn btn-danger">
+                        <i class="bi bi-box-arrow-right me-1"></i>Yes, Logout
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
   <style>
     body {
         background: #f5f7fa;

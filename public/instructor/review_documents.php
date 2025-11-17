@@ -32,10 +32,21 @@ $dateTo = $_GET['date_to'] ?? '';
 $sortBy = $_GET['sort_by'] ?? 'submitted_at';
 $sortOrder = $_GET['sort_order'] ?? 'DESC';
 
-// Get instructor's section
+// Pagination parameters
+$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+$perPage = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 20;
+$page = max(1, $page); // Ensure page is at least 1
+
+// Get instructor's section (supporting both junction table and old method)
 $pdo = App\Utils\Database::getInstance();
-$stmt = $pdo->prepare("SELECT section_id FROM users WHERE id = ?");
-$stmt->execute([$_SESSION['user_id']]);
+$stmt = $pdo->prepare("
+    SELECT COALESCE(
+        (SELECT section_id FROM instructor_sections WHERE instructor_id = ? LIMIT 1),
+        (SELECT section_id FROM users WHERE id = ? AND role = 'instructor'),
+        (SELECT id FROM sections WHERE instructor_id = ? LIMIT 1)
+    ) as section_id
+");
+$stmt->execute([$_SESSION['user_id'], $_SESSION['user_id'], $_SESSION['user_id']]);
 $instructor = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$instructor || !$instructor['section_id']) {
@@ -43,8 +54,8 @@ if (!$instructor || !$instructor['section_id']) {
     exit;
 }
 
-// Get submissions for review
-$submissions = $controller->getSubmissionsForReview(
+// Get submissions for review with pagination
+$result = $controller->getSubmissionsForReview(
     $instructor['section_id'],
     $studentFilter,
     $documentTypeFilter,
@@ -52,8 +63,13 @@ $submissions = $controller->getSubmissionsForReview(
     $dateFrom,
     $dateTo,
     $sortBy,
-    $sortOrder
+    $sortOrder,
+    $page,
+    $perPage
 );
+
+$submissions = $result['data'];
+$pagination = $result['pagination'];
 
 // Get statistics
 $stats = $controller->getReviewStatistics($instructor['section_id']);
@@ -188,6 +204,7 @@ $error = $_GET['error'] ?? '';
                         <label for="document_type" class="form-label" style="font-size: 13px;">Type</label>
                         <select class="form-select" id="document_type" name="document_type" style="font-size: 13px;">
                             <option value="">All Types</option>
+                            <optgroup label="Regular Documents">
                             <option value="moa" <?= $documentTypeFilter === 'moa' ? 'selected' : '' ?>>MOA</option>
                             <option value="endorsement" <?= $documentTypeFilter === 'endorsement' ? 'selected' : '' ?>>Endorsement</option>
                             <option value="parental_consent" <?= $documentTypeFilter === 'parental_consent' ? 'selected' : '' ?>>Parental Consent</option>
@@ -195,6 +212,12 @@ $error = $_GET['error'] ?? '';
                             <option value="ojt_plan" <?= $documentTypeFilter === 'ojt_plan' ? 'selected' : '' ?>>OJT Plan</option>
                             <option value="notarized_consent" <?= $documentTypeFilter === 'notarized_consent' ? 'selected' : '' ?>>Notarized Consent</option>
                             <option value="pledge" <?= $documentTypeFilter === 'pledge' ? 'selected' : '' ?>>Pledge</option>
+                            </optgroup>
+                            <optgroup label="Reports">
+                                <option value="weekly_report" <?= $documentTypeFilter === 'weekly_report' ? 'selected' : '' ?>>Weekly Report</option>
+                                <option value="monthly_report" <?= $documentTypeFilter === 'monthly_report' ? 'selected' : '' ?>>Monthly Report</option>
+                                <option value="excuse_document" <?= $documentTypeFilter === 'excuse_document' ? 'selected' : '' ?>>Excuse Document</option>
+                            </optgroup>
                         </select>
                     </div>
                     <div class="col-md-2">
@@ -245,6 +268,20 @@ $error = $_GET['error'] ?? '';
                         <p class="text-muted">No student document submissions match your current filters.</p>
                     </div>
                 <?php else: ?>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div class="text-muted" style="margin-left: 20px;">
+                            Showing <?= $pagination['from'] ?> to <?= $pagination['to'] ?> of <?= $pagination['total'] ?> entries
+                        </div>
+                        <div class="d-flex align-items-center" style="margin-right: 20px; margin-top: 10px;">
+                            <label for="per_page" class="me-2">Items per page:</label>
+                            <select class="form-select form-select-sm" id="per_page" style="width: auto;" onchange="updatePerPage(this.value)">
+                                <option value="10" <?= $perPage == 10 ? 'selected' : '' ?>>10</option>
+                                <option value="20" <?= $perPage == 20 ? 'selected' : '' ?>>20</option>
+                                <option value="30" <?= $perPage == 30 ? 'selected' : '' ?>>30</option>
+                                <option value="50" <?= $perPage == 50 ? 'selected' : '' ?>>50</option>
+                            </select>
+                        </div>
+                    </div>
                     <div class="table-responsive">
                         <table class="table table-hover mb-0">
                             <thead class="table-light">
@@ -311,7 +348,14 @@ $error = $_GET['error'] ?? '';
                                         </td>
                                         <td>
                                             <span class="badge bg-light text-dark">
-                                                <?= ucfirst(str_replace('_', ' ', $submission['document_type'])) ?>
+                                                <?php 
+                                                // Handle report types differently
+                                                if (isset($submission['submission_type']) && $submission['submission_type'] === 'report') {
+                                                    echo htmlspecialchars($submission['document_name']);
+                                                } else {
+                                                    echo ucfirst(str_replace('_', ' ', $submission['document_type']));
+                                                }
+                                                ?>
                                             </span>
                                         </td>
                                         <td>
@@ -334,18 +378,24 @@ $error = $_GET['error'] ?? '';
                                         </td>
                                         <td>
                                             <div class="btn-group" role="group">
-                                                <a href="document_review.php?id=<?= $submission['id'] ?>" 
+                                                <?php 
+                                                $submissionType = $submission['submission_type'] ?? 'document';
+                                                $reviewUrl = $submissionType === 'report' 
+                                                    ? "document_review.php?id={$submission['id']}&type=report" 
+                                                    : "document_review.php?id={$submission['id']}";
+                                                ?>
+                                                <a href="<?= $reviewUrl ?>" 
                                                    class="btn btn-outline-primary btn-sm" title="Review Document">
                                                     <i class="bi bi-eye"></i>
                                                 </a>
                                                 
                                                 <?php if ($submission['status'] === 'pending'): ?>
                                                     <button type="button" class="btn btn-success btn-sm" 
-                                                            onclick="quickApprove(<?= $submission['id'] ?>)" title="Quick Approve">
+                                                            onclick="quickApprove(<?= $submission['id'] ?>, '<?= $submissionType ?>')" title="Quick Approve">
                                                         <i class="bi bi-check"></i>
                                                     </button>
                                                     <button type="button" class="btn btn-warning btn-sm" 
-                                                            onclick="requestRevision(<?= $submission['id'] ?>)" title="Request Revision">
+                                                            onclick="requestRevision(<?= $submission['id'] ?>, '<?= $submissionType ?>')" title="Request Revision">
                                                         <i class="bi bi-arrow-clockwise"></i>
                                                     </button>
                                                 <?php endif; ?>
@@ -356,13 +406,87 @@ $error = $_GET['error'] ?? '';
                             </tbody>
                         </table>
                     </div>
+                    
+                    <!-- Pagination -->
+                    <?php if ($pagination['total_pages'] > 1): ?>
+                    <nav aria-label="Page navigation" class="mt-4">
+                        <ul class="pagination justify-content-center">
+                            <!-- Previous Page Link -->
+                            <li class="page-item <?= $pagination['current_page'] == 1 ? 'disabled' : '' ?>">
+                                <a class="page-link" href="<?= buildPaginationUrl(1, $perPage) ?>" aria-label="First">
+                                    <span aria-hidden="true">&laquo;&laquo;</span>
+                                </a>
+                            </li>
+                            <li class="page-item <?= $pagination['current_page'] == 1 ? 'disabled' : '' ?>">
+                                <a class="page-link" href="<?= buildPaginationUrl($pagination['current_page'] - 1, $perPage) ?>" aria-label="Previous">
+                                    <span aria-hidden="true">&laquo;</span>
+                                </a>
+                            </li>
+                            
+                            <!-- Page Numbers -->
+                            <?php
+                            $startPage = max(1, $pagination['current_page'] - 2);
+                            $endPage = min($pagination['total_pages'], $pagination['current_page'] + 2);
+                            
+                            if ($startPage > 1) {
+                                echo '<li class="page-item"><a class="page-link" href="' . buildPaginationUrl(1, $perPage) . '">1</a></li>';
+                                if ($startPage > 2) {
+                                    echo '<li class="page-item disabled"><span class="page-link">...</span></li>';
+                                }
+                            }
+                            
+                            for ($i = $startPage; $i <= $endPage; $i++) {
+                                $active = $i == $pagination['current_page'] ? 'active' : '';
+                                echo '<li class="page-item ' . $active . '"><a class="page-link" href="' . buildPaginationUrl($i, $perPage) . '">' . $i . '</a></li>';
+                            }
+                            
+                            if ($endPage < $pagination['total_pages']) {
+                                if ($endPage < $pagination['total_pages'] - 1) {
+                                    echo '<li class="page-item disabled"><span class="page-link">...</span></li>';
+                                }
+                                echo '<li class="page-item"><a class="page-link" href="' . buildPaginationUrl($pagination['total_pages'], $perPage) . '">' . $pagination['total_pages'] . '</a></li>';
+                            }
+                            ?>
+                            
+                            <!-- Next Page Link -->
+                            <li class="page-item <?= $pagination['current_page'] == $pagination['total_pages'] ? 'disabled' : '' ?>">
+                                <a class="page-link" href="<?= buildPaginationUrl($pagination['current_page'] + 1, $perPage) ?>" aria-label="Next">
+                                    <span aria-hidden="true">&raquo;</span>
+                                </a>
+                            </li>
+                            <li class="page-item <?= $pagination['current_page'] == $pagination['total_pages'] ? 'disabled' : '' ?>">
+                                <a class="page-link" href="<?= buildPaginationUrl($pagination['total_pages'], $perPage) ?>" aria-label="Last">
+                                    <span aria-hidden="true">&raquo;&raquo;</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </nav>
+                    <?php endif; ?>
                 <?php endif; ?>
             </div>
         </div>
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <?php
+    // Function to build pagination URLs with existing query parameters
+    function buildPaginationUrl($page, $perPage) {
+        $params = $_GET;
+        $params['page'] = $page;
+        $params['per_page'] = $perPage;
+        return '?' . http_build_query($params);
+    }
+    ?>
+    
     <script>
+        // Function to update items per page
+        function updatePerPage(perPage) {
+            const url = new URL(window.location.href);
+            url.searchParams.set('per_page', perPage);
+            url.searchParams.set('page', 1); // Reset to first page when changing items per page
+            window.location.href = url.toString();
+        }
+        
         // Bulk selection handling
         const checkboxes = document.querySelectorAll('.submission-checkbox');
         const selectAllCheckbox = document.getElementById('selectAll');
@@ -456,7 +580,7 @@ $error = $_GET['error'] ?? '';
         });
         
         // Quick actions
-        function quickApprove(submissionId) {
+        function quickApprove(submissionId, submissionType = 'document') {
             if (confirm('Approve this document?')) {
                 // Create form and submit
                 const form = document.createElement('form');
@@ -469,12 +593,18 @@ $error = $_GET['error'] ?? '';
                 input.value = submissionId;
                 form.appendChild(input);
                 
+                const typeInput = document.createElement('input');
+                typeInput.type = 'hidden';
+                typeInput.name = 'submission_type';
+                typeInput.value = submissionType;
+                form.appendChild(typeInput);
+                
                 document.body.appendChild(form);
                 form.submit();
             }
         }
         
-        function requestRevision(submissionId) {
+        function requestRevision(submissionId, submissionType = 'document') {
             const feedback = prompt('Please provide feedback for revision:');
             if (feedback) {
                 // Create form and submit
@@ -487,6 +617,12 @@ $error = $_GET['error'] ?? '';
                 idInput.name = 'submission_id';
                 idInput.value = submissionId;
                 form.appendChild(idInput);
+                
+                const typeInput = document.createElement('input');
+                typeInput.type = 'hidden';
+                typeInput.name = 'submission_type';
+                typeInput.value = submissionType;
+                form.appendChild(typeInput);
                 
                 const feedbackInput = document.createElement('input');
                 feedbackInput.type = 'hidden';

@@ -57,10 +57,15 @@ class UserService
     /**
      * Get all users with pagination, search, and filters
      */
-    public function getAllUsers(int $limit = 20, int $offset = 0, string $search = '', string $role = '', string $section = '', string $status = ''): array
+    public function getAllUsers(int $limit = 20, int $offset = 0, string $search = '', string $role = '', string $section = '', string $status = '', bool $showArchived = false): array
     {
         $whereConditions = [];
         $params = [];
+        
+        // Filter by archived status (default: show only non-archived)
+        if (!$showArchived) {
+            $whereConditions[] = "(u.archived = 0 OR u.archived IS NULL)";
+        }
         
         // Add search condition
         if (!empty($search)) {
@@ -109,10 +114,15 @@ class UserService
     /**
      * Get total user count with filters
      */
-    public function getTotalUsers(string $search = '', string $role = '', string $section = '', string $status = ''): int
+    public function getTotalUsers(string $search = '', string $role = '', string $section = '', string $status = '', bool $showArchived = false): int
     {
         $whereConditions = [];
         $params = [];
+        
+        // Filter by archived status (default: show only non-archived)
+        if (!$showArchived) {
+            $whereConditions[] = "(u.archived = 0 OR u.archived IS NULL)";
+        }
         
         // Add search condition
         if (!empty($search)) {
@@ -222,8 +232,7 @@ class UserService
     {
         $requiredFields = ['school_id', 'email', 'full_name'];
         $userData = [
-            'role' => $userType,
-            'password' => $this->generateDefaultPassword()
+            'role' => $userType
         ];
         
         // Map CSV columns to user data
@@ -234,11 +243,42 @@ class UserService
             $userData[$field] = trim($row[$field]);
         }
         
+        // Handle password - use from CSV if provided, otherwise use default
+        if (!empty($row['password']) && trim($row['password']) !== '') {
+            $password = trim($row['password']);
+            // Validate password length if provided
+            if (strlen($password) < 8) {
+                throw new \Exception("Password must be at least 8 characters long.");
+            }
+            $userData['password'] = $password;
+        } else {
+            // Default password if not provided in CSV or left blank
+            $userData['password'] = 'Password@2025';
+        }
+        
         // Optional fields
-        $optionalFields = ['gender', 'contact', 'facebook_name', 'section_id'];
+        $optionalFields = ['gender', 'contact', 'facebook_name'];
         foreach ($optionalFields as $field) {
             $userData[$field] = !empty($row[$field]) ? trim($row[$field]) : null;
         }
+        
+        // Handle section_code - convert to section_id
+        $sectionId = null;
+        if (!empty($row['section_code'])) {
+            $sectionCode = trim($row['section_code']);
+            // Look up section_id from section_code (case-insensitive)
+            $stmt = $this->pdo->prepare("SELECT id, section_code FROM sections WHERE UPPER(section_code) = UPPER(?)");
+            $stmt->execute([$sectionCode]);
+            $section = $stmt->fetch();
+            
+            if (!$section) {
+                throw new \Exception("Section code '{$sectionCode}' not found in database. Available sections: " . $this->getAvailableSectionCodes());
+            }
+            
+            $sectionId = (int) $section['id'];
+        }
+        
+        $userData['section_id'] = $sectionId;
         
         return $userData;
     }
@@ -386,6 +426,57 @@ class UserService
             return ['success' => true, 'message' => 'Section created successfully.'];
         } else {
             return ['success' => false, 'message' => 'Failed to create section.'];
+        }
+    }
+    
+    /**
+     * Get available section codes for error messages
+     */
+    private function getAvailableSectionCodes(): string
+    {
+        $stmt = $this->pdo->query("SELECT section_code FROM sections ORDER BY section_code");
+        $sections = $stmt->fetchAll(\PDO::FETCH_COLUMN);
+        return !empty($sections) ? implode(', ', $sections) : 'None';
+    }
+    
+    /**
+     * Archive all users except admins
+     * This is used when a batch completes OJT and admin wants to start fresh
+     */
+    public function archiveAllUsers(int $archivedBy): array
+    {
+        try {
+            // Start transaction
+            $this->pdo->beginTransaction();
+            
+            // Archive all users except admins
+            $stmt = $this->pdo->prepare("
+                UPDATE users 
+                SET archived = 1, 
+                    archived_at = NOW(), 
+                    archived_by = ?
+                WHERE role != 'admin' 
+                AND (archived = 0 OR archived IS NULL)
+            ");
+            $stmt->execute([$archivedBy]);
+            $archivedCount = $stmt->rowCount();
+            
+            // Commit transaction
+            $this->pdo->commit();
+            
+            return [
+                'success' => true,
+                'message' => "Successfully archived {$archivedCount} users.",
+                'count' => $archivedCount
+            ];
+        } catch (\Exception $e) {
+            // Rollback on error
+            $this->pdo->rollBack();
+            return [
+                'success' => false,
+                'message' => 'Error archiving users: ' . $e->getMessage(),
+                'count' => 0
+            ];
         }
     }
 }

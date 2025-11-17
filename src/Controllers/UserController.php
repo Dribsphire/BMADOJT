@@ -47,15 +47,15 @@ class UserController
         $search = $_GET['search'] ?? '';
         $role = $_GET['role'] ?? '';
         $section = $_GET['section'] ?? '';
-        $status = $_GET['status'] ?? '';
+        $showArchived = isset($_GET['show_archived']) && $_GET['show_archived'] === '1';
         
         // Get all users with pagination, search, and filters
         $page = (int) ($_GET['page'] ?? 1);
         $limit = 20;
         $offset = ($page - 1) * $limit;
         
-        $users = $this->userService->getAllUsers($limit, $offset, $search, $role, $section, $status);
-        $totalUsers = $this->userService->getTotalUsers($search, $role, $section, $status);
+        $users = $this->userService->getAllUsers($limit, $offset, $search, $role, $section, '', $showArchived);
+        $totalUsers = $this->userService->getTotalUsers($search, $role, $section, '', $showArchived);
         $totalPages = ceil($totalUsers / $limit);
         
         // Get all sections
@@ -202,6 +202,98 @@ class UserController
     }
     
     /**
+     * Handle password change
+     */
+    public function changePassword(): void
+    {
+        // Check authentication and authorization
+        if (!$this->authMiddleware->check()) {
+            $this->authMiddleware->redirectToLogin();
+        }
+        
+        if (!$this->authMiddleware->requireRole('admin')) {
+            $this->authMiddleware->redirectToUnauthorized();
+        }
+        
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header('Location: users.php');
+            exit;
+        }
+        
+        // Debug: Log all POST data
+        error_log('UserController::changePassword() - POST data: ' . print_r($_POST, true));
+        error_log('UserController::changePassword() - Raw user_id: ' . ($_POST['user_id'] ?? 'NOT SET'));
+        
+        $userId = isset($_POST['user_id']) ? (int) $_POST['user_id'] : 0;
+        $newPassword = $_POST['new_password'] ?? '';
+        $confirmPassword = $_POST['confirm_password'] ?? '';
+        
+        error_log('UserController::changePassword() - Parsed userId: ' . $userId . ', Password length: ' . strlen($newPassword));
+        
+        if ($userId <= 0) {
+            $rawUserId = $_POST['user_id'] ?? 'not set';
+            $_SESSION['error'] = 'Invalid user ID. Received: "' . htmlspecialchars($rawUserId) . '" (parsed as: ' . $userId . ')';
+            error_log('UserController::changePassword() - ERROR: Invalid user ID. Raw: ' . $rawUserId . ', Parsed: ' . $userId);
+            header('Location: users.php');
+            exit;
+        }
+        
+        if (empty($newPassword)) {
+            $_SESSION['error'] = 'New password is required.';
+            header('Location: users.php');
+            exit;
+        }
+        
+        if (strlen($newPassword) < 8) {
+            $_SESSION['error'] = 'Password must be at least 8 characters long.';
+            header('Location: users.php');
+            exit;
+        }
+        
+        if ($newPassword !== $confirmPassword) {
+            $_SESSION['error'] = 'Passwords do not match.';
+            header('Location: users.php');
+            exit;
+        }
+        
+        try {
+            $pdo = Database::getInstance();
+            $user = $this->authMiddleware->getCurrentUser();
+            
+            // Verify user exists and is not an admin
+            $stmt = $pdo->prepare("SELECT id, role, school_id, full_name FROM users WHERE id = ?");
+            $stmt->execute([$userId]);
+            $targetUser = $stmt->fetch(\PDO::FETCH_ASSOC);
+            
+            if (!$targetUser) {
+                $_SESSION['error'] = 'User not found.';
+            } elseif ($targetUser['role'] === 'admin') {
+                $_SESSION['error'] = 'Cannot change admin password through this interface.';
+            } else {
+                // Update password
+                $hashedPassword = password_hash($newPassword, PASSWORD_DEFAULT);
+                $stmt = $pdo->prepare("UPDATE users SET password_hash = ? WHERE id = ?");
+                $stmt->execute([$hashedPassword, $userId]);
+                
+                // Log activity
+                $stmt = $pdo->prepare("INSERT INTO activity_logs (user_id, action, description) VALUES (?, ?, ?)");
+                $stmt->execute([
+                    $user->id,
+                    'password_reset',
+                    "Admin reset password for user {$targetUser['school_id']} ({$targetUser['full_name']})"
+                ]);
+                
+                $_SESSION['success'] = "Password changed successfully for {$targetUser['full_name']} ({$targetUser['school_id']}).";
+            }
+        } catch (\Exception $e) {
+            $_SESSION['error'] = 'Error changing password: ' . $e->getMessage();
+        }
+        
+        header('Location: users.php');
+        exit;
+    }
+    
+    /**
      * Handle user deletion
      */
     public function delete(): void
@@ -238,6 +330,52 @@ class UserController
             }
         } catch (\Exception $e) {
             $_SESSION['error'] = 'Error deleting user: ' . $e->getMessage();
+        }
+        
+        header('Location: users.php');
+        exit;
+    }
+    
+    /**
+     * Handle archiving all users (except admins)
+     */
+    public function archiveAll(): void
+    {
+        // Check authentication and authorization
+        if (!$this->authMiddleware->check()) {
+            $this->authMiddleware->redirectToLogin();
+        }
+        
+        if (!$this->authMiddleware->requireRole('admin')) {
+            $this->authMiddleware->redirectToUnauthorized();
+        }
+        
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header('Location: users.php');
+            exit;
+        }
+        
+        $user = $this->authMiddleware->getCurrentUser();
+        
+        try {
+            $result = $this->userService->archiveAllUsers($user->id);
+            
+            if ($result['success']) {
+                // Log activity
+                $pdo = Database::getInstance();
+                $stmt = $pdo->prepare("INSERT INTO activity_logs (user_id, action, description) VALUES (?, ?, ?)");
+                $stmt->execute([
+                    $user->id,
+                    'archive_all_users',
+                    "Admin archived {$result['count']} users (all non-admin users)"
+                ]);
+                
+                $_SESSION['success'] = $result['message'];
+            } else {
+                $_SESSION['error'] = $result['message'];
+            }
+        } catch (\Exception $e) {
+            $_SESSION['error'] = 'Error archiving users: ' . $e->getMessage();
         }
         
         header('Location: users.php');

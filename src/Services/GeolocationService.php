@@ -204,8 +204,8 @@ class GeolocationService
             'valid' => $isWithinRadius,
             'distance' => $distance,
             'message' => $isWithinRadius 
-                ? "Location verified. Distance: {$distance}m from {$student['workplace_name']}"
-                : "Location too far. Distance: {$distance}m (required: ≤40m from {$student['workplace_name']})"
+                ? "Location verified. You are within the workplace radius ({$distance}m)"
+                : "Location is too far from the workplace radius ({$distance}m)"
         ];
     }
 }

@@ -193,8 +193,8 @@ class SectionService
                 return ['success' => false, 'message' => 'Section not found.'];
             }
             
-            // Remove instructor assignments (set section_id to NULL)
-            $stmt = $this->pdo->prepare("UPDATE users SET section_id = NULL WHERE section_id = ? AND role = 'instructor'");
+            // Remove instructor assignments from junction table
+            $stmt = $this->pdo->prepare("DELETE FROM instructor_sections WHERE section_id = ?");
             $stmt->execute([$sectionId]);
             
             // Remove student assignments (set section_id to NULL)
@@ -216,7 +216,7 @@ class SectionService
     }
     
     /**
-     * Assign instructor to section
+     * Assign instructor to section (one instructor per section, using junction table)
      */
     public function assignInstructor(int $sectionId, ?int $instructorId): array
     {
@@ -230,14 +230,18 @@ class SectionService
                 return ['success' => false, 'message' => 'Section not found.'];
             }
             
-            // Remove current instructor assignment
+            // Remove all current instructor assignments for this section (only one instructor per section)
+            $stmt = $this->pdo->prepare("DELETE FROM instructor_sections WHERE section_id = ?");
+            $stmt->execute([$sectionId]);
+            
+            // Also clear any old assignments in users.section_id (migration cleanup)
             $stmt = $this->pdo->prepare("UPDATE users SET section_id = NULL WHERE section_id = ? AND role = 'instructor'");
             $stmt->execute([$sectionId]);
             
             // Assign new instructor if provided
             if ($instructorId) {
-                // Check if instructor exists
-                $stmt = $this->pdo->prepare("SELECT full_name FROM users WHERE id = ? AND role = 'instructor'");
+                // Check if instructor exists (can be either instructor or admin acting as instructor)
+                $stmt = $this->pdo->prepare("SELECT full_name, role FROM users WHERE id = ? AND (role = 'instructor' OR role = 'admin')");
                 $stmt->execute([$instructorId]);
                 $instructor = $stmt->fetch();
                 
@@ -245,9 +249,13 @@ class SectionService
                     return ['success' => false, 'message' => 'Instructor not found.'];
                 }
                 
-                // Assign instructor
-                $stmt = $this->pdo->prepare("UPDATE users SET section_id = ? WHERE id = ?");
-                $stmt->execute([$sectionId, $instructorId]);
+                // Insert into junction table (one instructor per section)
+                $stmt = $this->pdo->prepare("
+                    INSERT INTO instructor_sections (instructor_id, section_id) 
+                    VALUES (?, ?)
+                    ON DUPLICATE KEY UPDATE instructor_id = instructor_id
+                ");
+                $stmt->execute([$instructorId, $sectionId]);
                 
                 // Log activity
                 $this->logActivity('instructor_assign', "Assigned instructor {$instructor['full_name']} to section {$section['section_code']}");
